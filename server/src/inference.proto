@@ -1,0 +1,16 @@
+syntax = "proto3";
+package inference;
+
+message InferenceRequest {
+  bytes  frame   = 1;
+  bool   is_dead = 2;
+  float  reward  = 3;
+}
+
+message InferenceResponse {
+  repeated int32 action = 1;
+}
+
+service Inference {
+  rpc Predict(InferenceRequest) returns (InferenceResponse);
+}
