@@ -41,8 +41,9 @@ def to_tensor(buf: bytes) -> torch.Tensor:
         img = cv2.copyMakeBorder(img, top, bottom, left, right,
                                  cv2.BORDER_CONSTANT, value=0)
 
-    cv2.imshow("preview (RGB)", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-    cv2.waitKey(1)
+    # これは確認用
+    # cv2.imshow("preview (RGB)", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+    # cv2.waitKey(1)
 
     t = torch.from_numpy(img).permute(2,0,1).float() / 255.0  # 0-1
     return t                                                 # [3,256,256]
