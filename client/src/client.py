@@ -69,6 +69,12 @@ def main():
     action = [0] * 8
     channel = grpc.insecure_channel(config.SERVER_ADDRESS)
     stub = inference_pb2_grpc.InferenceStub(channel)
+    try:
+        grpc.channel_ready_future(channel).result(timeout=5)
+    except grpc.FutureTimeoutError:
+        print(f"Could not connect to gRPC server at {config.SERVER_ADDRESS}."
+              "\nMake sure the server is running and reachable.")
+        return
 
     cv2.namedWindow('Game', cv2.WINDOW_AUTOSIZE)
     while True:
@@ -94,7 +100,11 @@ def main():
             is_dead = curr_state['dead'],
             reward  = reward,
         )
-        res = stub.Predict(req)
+        try:
+            res = stub.Predict(req)
+        except grpc.RpcError as e:
+            print(f"gRPC error: {e}. Is the server still running?")
+            break
 
         # ⑤ 新 action をセット
         action = list(res.action)

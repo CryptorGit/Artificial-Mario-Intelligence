@@ -44,6 +44,17 @@ PyTorch policy served via gRPC.
 The client window will display the game and send frames to the server, which
 responds with actions predicted by the policy.
 
+## Troubleshooting
+
+If the client exits with a gRPC connection error such as `UNAVAILABLE: failed
+to connect to all addresses`, ensure that the server is running and accessible
+at the address specified by the `MARIO_SERVER` environment variable (default is
+`localhost:50051`). Start the server in another terminal using:
+
+```bash
+python server/src/server.py
+```
+
 ## License
 
 This repository is provided for educational purposes only. ROM files are
