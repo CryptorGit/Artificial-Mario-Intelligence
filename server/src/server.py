@@ -15,7 +15,9 @@ FRAMES = 4
 LR = 1e-4
 GAMMA = 0.99
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-PORT = 50051
+import os
+
+ADDR = os.environ.get("MARIO_SERVER", "0.0.0.0:50051")
 
 # --- frame buffer -------------------------------------------------
 def to_tensor(buf: bytes) -> torch.Tensor:
@@ -77,7 +79,7 @@ class Infer(inference_pb2_grpc.InferenceServicer):
 if __name__ == "__main__":
     srv = grpc.server(ThreadPoolExecutor(max_workers=4))
     inference_pb2_grpc.add_InferenceServicer_to_server(Infer(), srv)
-    srv.add_insecure_port(f"0.0.0.0:{PORT}")
+    srv.add_insecure_port(ADDR)
     srv.start()
-    print(f"gRPC running on {PORT}")
+    print(f"gRPC running on {ADDR}")
     srv.wait_for_termination()

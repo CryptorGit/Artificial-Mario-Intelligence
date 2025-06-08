@@ -31,7 +31,8 @@ PyTorch policy served via gRPC.
 
 ## Running
 
-1. Start the server:
+1. Start the server (optionally set `MARIO_SERVER` to change the address it uses
+   to listen, default is `0.0.0.0:50051`):
    ```bash
    python server/src/server.py
    ```
@@ -48,8 +49,9 @@ responds with actions predicted by the policy.
 
 If the client exits with a gRPC connection error such as `UNAVAILABLE: failed
 to connect to all addresses`, ensure that the server is running and accessible
-at the address specified by the `MARIO_SERVER` environment variable (default is
-`localhost:50051`). Start the server in another terminal using:
+at the address specified by the `MARIO_SERVER` environment variable (the same
+variable also controls the address that the server listens on). Start the
+server in another terminal using:
 
 ```bash
 python server/src/server.py
