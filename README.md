@@ -1,14 +1,29 @@
 # Artificial Mario Intelligence
 
 This project contains a simple reinforcement learning setup for playing
-**Super Mario Bros** using [Gym Retro](https://github.com/openai/retro) and a
-PyTorch policy served via gRPC.
+**Super Mario Bros** using [Gym Retro](https://github.com/openai/retro). Frames
+from the emulator are streamed via gRPC to a PyTorch server that returns the
+next action. The server implements an IndRNN-style CNN policy trained online
+with the REINFORCE algorithm.
+
+## Model details
+
+The policy network is defined in `server/src/model.py`. It combines three
+convolutional layers with [Independently Recurrent Neural Network
+(IndRNN)](https://arxiv.org/abs/1803.04831) connections followed by a fully
+connected layer. Each frame is resized to 256×256 pixels and passed to the
+model together with the previous hidden state. Actions are sampled from a
+Bernoulli distribution to represent the eight controller buttons. Gradients are
+updated using the REINFORCE algorithm
+([Williams, 1992](https://doi.org/10.1007/BF00992696)) whenever an episode ends.
 
 ## Project structure
 
 - `client/src` – client that runs the emulator and communicates with the server.
 - `server/src` – gRPC server and neural network policy.
 - `client/roms` – example ROM files (must be imported with `retro.import`).
+- `server/src/display_server.py` – utility to inspect frames received over gRPC.
+- `client/src/action_test.py` – cycles through all buttons for input testing.
 
 ## Setup
 
@@ -27,17 +42,18 @@ PyTorch policy served via gRPC.
        --grpc_python_out=server/src server/src/inference.proto
    python -m grpc_tools.protoc -I client/src --python_out=client/src \
        --grpc_python_out=client/src client/src/inference.proto
-   ```
+       ```
+5. (Optional) Adjust reward weights in `client/src/config.py` to tune training.
 
 ## Running
 
-1. Start the server (optionally set `MARIO_SERVER` to change the address it uses
-   to listen, default is `0.0.0.0:50051`):
+1. Start the server. The listening address can be changed via the
+   `MARIO_SERVER` environment variable (default `0.0.0.0:50051`):
    ```bash
    python server/src/server.py
    ```
-2. In another terminal start the client (set `MARIO_SERVER` if the server is on
-   another host):
+2. Edit `client/src/client.py` to specify the server address in
+   `grpc.insecure_channel` (default `100.64.1.26:50051`) and start the client:
    ```bash
    python client/src/client.py
    ```
@@ -45,13 +61,20 @@ PyTorch policy served via gRPC.
 The client window will display the game and send frames to the server, which
 responds with actions predicted by the policy.
 
+## Utilities
+
+- `server/src/display_server.py` can be run to check the resolution of frames
+  arriving over gRPC.
+- `client/src/action_test.py` presses each controller button in turn for
+  debugging.
+- Reward calculation parameters are located in `client/src/config.py`.
+
 ## Troubleshooting
 
 If the client exits with a gRPC connection error such as `UNAVAILABLE: failed
-to connect to all addresses`, ensure that the server is running and accessible
-at the address specified by the `MARIO_SERVER` environment variable (the same
-variable also controls the address that the server listens on). Start the
-server in another terminal using:
+to connect to all addresses`, ensure that the server is running and reachable
+at the address configured for the client. The server listening address is
+controlled by the `MARIO_SERVER` environment variable. Start the server using:
 
 ```bash
 python server/src/server.py
