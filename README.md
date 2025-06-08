@@ -13,7 +13,7 @@ PyTorch policy served via gRPC.
 ## Setup
 
 1. Install Python 3.8 or newer.
-2. Install dependencies:
+2. Install dependencies (requires **gRPC 1.71.0 or newer**):
    ```bash
    pip install -r requirements.txt
    ```
