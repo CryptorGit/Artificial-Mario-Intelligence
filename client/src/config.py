@@ -1,8 +1,5 @@
 """Client configuration."""
 
-import os
-
-
 # ---------------------------------------------------------------------------
 # 報酬設計パラメータ
 REWARD_WEIGHTS = {
@@ -19,7 +16,6 @@ REWARD_WEIGHTS = {
     "time": -0.01,
 }
 
-
 # ---------------------------------------------------------------------------
 # サーバの接続先アドレス（環境変数 MARIO_SERVER で上書き可）
-SERVER_ADDRESS = os.environ.get("MARIO_SERVER", "localhost:50051")
+SERVER_ADDRESS = "100.64.1.26:50051"
