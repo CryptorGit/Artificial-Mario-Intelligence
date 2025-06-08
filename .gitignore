@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+.env
+
+# OS files
+.DS_Store
+client/roms/

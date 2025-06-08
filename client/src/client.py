@@ -66,9 +66,9 @@ def main():
     ram = env.get_ram()
     prev_state = extract_state_and_score(ram)
 
-    action = [0]*8
-    channel = grpc.insecure_channel('100.64.1.26:50051')
-    stub    = inference_pb2_grpc.InferenceStub(channel)
+    action = [0] * 8
+    channel = grpc.insecure_channel(config.SERVER_ADDRESS)
+    stub = inference_pb2_grpc.InferenceStub(channel)
 
     cv2.namedWindow('Game', cv2.WINDOW_AUTOSIZE)
     while True:
@@ -106,6 +106,7 @@ def main():
             prev_state = extract_state_and_score(ram)
 
     cv2.destroyAllWindows()
+    env.close()
 
 if __name__ == '__main__':
     main()
