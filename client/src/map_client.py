@@ -18,7 +18,7 @@ def main():
     env = retro.make('SuperMarioBros-Nes')
     obs = env.reset()
 
-    channel = grpc.insecure_channel('localhost:50051')
+    channel = grpc.insecure_channel('100.64.1.26:50051')
     stub = inference_pb2_grpc.InferenceStub(channel)
 
     while True:
