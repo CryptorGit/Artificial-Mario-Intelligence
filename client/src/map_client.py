@@ -7,18 +7,16 @@ import inference_pb2_grpc
 
 
 def get_maps(ram: np.ndarray):
-    # タイルとスプライト領域（簡易構成）
-    tile_map = np.reshape(ram[0x0500:0x05F0], (30, 32))  # 例：仮の領域
-    sprite_ram = ram[0x0200:0x02F0]  # スプライトデータ
+    tile_map = np.reshape(ram[0x0500:0x0500 + 960], (30, 32))  # 960 bytes = 30x32
+    sprite_ram = ram[0x0200:0x02F0]  # 予備：スプライト情報（仮）
 
     sprite_map = np.zeros((30, 32), dtype=np.uint8)
-    for i in range(0, len(sprite_ram), 4):  # 任意の仮ロジック
+    for i in range(0, len(sprite_ram), 4):
         y = sprite_ram[i]
-        x = sprite_ram[i+3]
+        x = sprite_ram[i + 3]
         if 0 <= y < 240 and 0 <= x < 256:
-            sprite_map[y//8, x//8] = 255
+            sprite_map[y // 8, x // 8] = 255
     return tile_map.astype(np.uint8), sprite_map.astype(np.uint8)
-
 
 def main():
     env = retro.make('SuperMarioBros-Nes')

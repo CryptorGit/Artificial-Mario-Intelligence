@@ -95,13 +95,10 @@ class MapInfer(inference_pb2_grpc.InferenceServicer):
         loss = F.cross_entropy(logits, y)
         self.opt_seg.zero_grad(); loss.backward(); self.opt_seg.step()
 
-        # --- policy PPO (simplified) ---
-        with torch.no_grad():
-            map_pred = torch.argmax(logits, 1)
-            map_pred_onehot = F.one_hot(map_pred, num_classes=2).permute(0, 3, 1, 2).float()
-        pi, value = self.policy(map_pred_onehot)
-        action = torch.distributions.Categorical(logits=pi).sample()
-        return inference_pb2.InferenceResponse(action=[int(action.item())])
+        # --- return fixed "go right" action ---
+        # Format: [b, 0, se, st, up, dn, lf, ri, a]
+        action = [0, 0, 0, 0, 0, 0, 0, 1, 0]  # right only
+        return inference_pb2.InferenceResponse(action=action)
 
 # --- bootstrap ------------------------------------------------
 def serve():
