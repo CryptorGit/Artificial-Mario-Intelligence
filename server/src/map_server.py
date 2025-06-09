@@ -64,6 +64,8 @@ class MapInfer(inference_pb2_grpc.InferenceServicer):
         tile_map = np.frombuffer(request.tile_map, np.uint8).reshape(30, 32)
         sprite_map = np.frombuffer(request.sprite_map, np.uint8).reshape(30, 32)
         map_gt = np.stack([tile_map, sprite_map], 0)
+        # convert to per-pixel class label (0: tile, 1: sprite)
+        label_gt = np.argmax(map_gt, axis=0)
 
         # display side by side
         tile_vis = cv2.resize(tile_map * 8, (240,224), interpolation=cv2.INTER_NEAREST)
@@ -74,15 +76,16 @@ class MapInfer(inference_pb2_grpc.InferenceServicer):
 
         # --- segmentation supervised update ---
         x = torch.from_numpy(img.transpose(2,0,1)).float().unsqueeze(0)/255.0
-        y = torch.from_numpy(map_gt).long().unsqueeze(0)
-        x,y = x.to(self.device), y.to(self.device)
-        logits = self.seg_model(x)
+        y = torch.from_numpy(label_gt).long().unsqueeze(0)
+        x, y = x.to(self.device), y.to(self.device)
+        logits_full = self.seg_model(x)
+        logits = F.interpolate(logits_full, size=(30, 32), mode='bilinear', align_corners=False)
         loss = F.cross_entropy(logits, y)
         self.opt_seg.zero_grad(); loss.backward(); self.opt_seg.step()
 
         # --- policy PPO (very simplified step) ---
         with torch.no_grad():
-            map_pred = torch.argmax(logits,1,keepdim=True).float()
+            map_pred = torch.argmax(logits, 1, keepdim=True).float()
         pi, value = self.policy(map_pred)
         action = torch.distributions.Categorical(logits=pi).sample()
         return inference_pb2.InferenceResponse(action=[int(action.item())])
