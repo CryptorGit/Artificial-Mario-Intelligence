@@ -85,8 +85,9 @@ class MapInfer(inference_pb2_grpc.InferenceServicer):
 
         # --- policy PPO (very simplified step) ---
         with torch.no_grad():
-            map_pred = torch.argmax(logits, 1, keepdim=True).float()
-        pi, value = self.policy(map_pred)
+            map_pred = torch.argmax(logits, 1)  # shape: [1, 30, 32]
+            map_pred_onehot = F.one_hot(map_pred, num_classes=2).permute(0, 3, 1, 2).float()  # [1, 2, 30, 32]
+        pi, value = self.policy(map_pred_onehot)
         action = torch.distributions.Categorical(logits=pi).sample()
         return inference_pb2.InferenceResponse(action=[int(action.item())])
 
