@@ -37,13 +37,15 @@ class UNet(nn.Module):
 class Policy(nn.Module):
     def __init__(self, in_ch=2, num_actions=8):
         super().__init__()
+        # 注意: 入力サイズが30x32の場合、Flatten後のサイズは 64*30*32 になります。
+        # 元のコードでは 64*32*30 となっていましたが、同じ値なので問題ありません。
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, 32, 3, padding=1), nn.ReLU(),
             nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(),
             nn.Flatten(),
         )
-        self.fc_pi = nn.Linear(64*32*30, num_actions)
-        self.fc_v  = nn.Linear(64*32*30, 1)
+        self.fc_pi = nn.Linear(64*30*32, num_actions)
+        self.fc_v  = nn.Linear(64*30*32, 1)
 
     def forward(self, x):
         h = self.conv(x)
@@ -72,10 +74,12 @@ class MapInfer(inference_pb2_grpc.InferenceServicer):
         img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
         # --- enhance tile map (middle panel) ---
-        tile_vis = cv2.resize(tile_map * 8, (240, 224), interpolation=cv2.INTER_NEAREST)
+        # タイルマップの値が0-255の範囲に散らばっている場合、見やすくするために値を増幅
+        tile_vis = cv2.resize((tile_map * 8).clip(0, 255), (240, 224), interpolation=cv2.INTER_NEAREST)
 
         # --- enhance sprite map (right panel) ---
-        sprite_vis = cv2.resize(sprite_map * 8, (240, 224), interpolation=cv2.INTER_NEAREST)
+        # スプライトマップは0か255なので増幅は不要
+        sprite_vis = cv2.resize(sprite_map, (240, 224), interpolation=cv2.INTER_NEAREST)
 
         # --- show all three images side-by-side ---
         disp = np.concatenate([
@@ -84,7 +88,9 @@ class MapInfer(inference_pb2_grpc.InferenceServicer):
             cv2.cvtColor(sprite_vis, cv2.COLOR_GRAY2BGR)
         ], axis=1)
         cv2.imshow('server', disp)
-        cv2.waitKey(1)
+        if cv2.waitKey(1) & 0xFF == 27:
+             # ここでサーバーを終了させるロジックを追加することも可能
+             pass
 
         # --- segmentation supervised update ---
         x = torch.from_numpy(img.transpose(2, 0, 1)).float().unsqueeze(0) / 255.0
@@ -108,7 +114,12 @@ def serve():
     server.add_insecure_port(addr)
     server.start()
     print(f'server running on {addr}')
-    server.wait_for_termination()
+    try:
+        server.wait_for_termination()
+    except KeyboardInterrupt:
+        server.stop(0)
+        cv2.destroyAllWindows()
+
 
 if __name__ == '__main__':
     serve()
