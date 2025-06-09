@@ -59,23 +59,35 @@ class MapInfer(inference_pb2_grpc.InferenceServicer):
         self.opt_pol = torch.optim.Adam(self.policy.parameters(), lr=1e-4)
 
     def Predict(self, request, context):
-        # decode frame and maps
+        # decode frame
         img = np.frombuffer(request.frame, np.uint8).reshape(224, 240, 3)
+
+        # decode tile map and sprite map from client RAM dump
         tile_map = np.frombuffer(request.tile_map, np.uint8).reshape(30, 32)
         sprite_map = np.frombuffer(request.sprite_map, np.uint8).reshape(30, 32)
         map_gt = np.stack([tile_map, sprite_map], 0)
-        # convert to per-pixel class label (0: tile, 1: sprite)
         label_gt = np.argmax(map_gt, axis=0)
 
-        # display side by side
-        tile_vis = cv2.resize(tile_map * 8, (240,224), interpolation=cv2.INTER_NEAREST)
-        spr_vis = cv2.resize(sprite_map * 8, (240,224), interpolation=cv2.INTER_NEAREST)
-        disp = np.concatenate([img, cv2.cvtColor(tile_vis, cv2.COLOR_GRAY2RGB), cv2.cvtColor(spr_vis, cv2.COLOR_GRAY2RGB)], axis=1)
+        # --- fix RGB/BGR for correct display ---
+        img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+        # --- enhance tile map (middle panel) ---
+        tile_vis = cv2.resize(tile_map * 8, (240, 224), interpolation=cv2.INTER_NEAREST)
+
+        # --- enhance sprite map (right panel) ---
+        sprite_vis = cv2.resize(sprite_map * 8, (240, 224), interpolation=cv2.INTER_NEAREST)
+
+        # --- show all three images side-by-side ---
+        disp = np.concatenate([
+            img_bgr,
+            cv2.cvtColor(tile_vis, cv2.COLOR_GRAY2BGR),
+            cv2.cvtColor(sprite_vis, cv2.COLOR_GRAY2BGR)
+        ], axis=1)
         cv2.imshow('server', disp)
         cv2.waitKey(1)
 
         # --- segmentation supervised update ---
-        x = torch.from_numpy(img.transpose(2,0,1)).float().unsqueeze(0)/255.0
+        x = torch.from_numpy(img.transpose(2, 0, 1)).float().unsqueeze(0) / 255.0
         y = torch.from_numpy(label_gt).long().unsqueeze(0)
         x, y = x.to(self.device), y.to(self.device)
         logits_full = self.seg_model(x)
@@ -83,17 +95,17 @@ class MapInfer(inference_pb2_grpc.InferenceServicer):
         loss = F.cross_entropy(logits, y)
         self.opt_seg.zero_grad(); loss.backward(); self.opt_seg.step()
 
-        # --- policy PPO (very simplified step) ---
+        # --- policy PPO (simplified) ---
         with torch.no_grad():
-            map_pred = torch.argmax(logits, 1)  # shape: [1, 30, 32]
-            map_pred_onehot = F.one_hot(map_pred, num_classes=2).permute(0, 3, 1, 2).float()  # [1, 2, 30, 32]
+            map_pred = torch.argmax(logits, 1)
+            map_pred_onehot = F.one_hot(map_pred, num_classes=2).permute(0, 3, 1, 2).float()
         pi, value = self.policy(map_pred_onehot)
         action = torch.distributions.Categorical(logits=pi).sample()
         return inference_pb2.InferenceResponse(action=[int(action.item())])
 
 # --- bootstrap ------------------------------------------------
 def serve():
-    addr = os.environ.get('MARIO_SERVER','0.0.0.0:50051')
+    addr = os.environ.get('MARIO_SERVER', '0.0.0.0:50051')
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     inference_pb2_grpc.add_InferenceServicer_to_server(MapInfer(), server)
     server.add_insecure_port(addr)
@@ -101,5 +113,5 @@ def serve():
     print(f'server running on {addr}')
     server.wait_for_termination()
 
-if __name__=='__main__':
+if __name__ == '__main__':
     serve()

@@ -7,10 +7,16 @@ import inference_pb2_grpc
 
 
 def get_maps(ram: np.ndarray):
-    # NOTE: For real use these should decode tile/sprite info from RAM.
-    # Here we create dummy arrays for demonstration.
-    tile_map = np.reshape(ram[:960], (30, 32))
-    sprite_map = np.reshape(ram[960:1920], (30, 32))
+    # タイルとスプライト領域（簡易構成）
+    tile_map = np.reshape(ram[0x0500:0x05F0], (30, 32))  # 例：仮の領域
+    sprite_ram = ram[0x0200:0x02F0]  # スプライトデータ
+
+    sprite_map = np.zeros((30, 32), dtype=np.uint8)
+    for i in range(0, len(sprite_ram), 4):  # 任意の仮ロジック
+        y = sprite_ram[i]
+        x = sprite_ram[i+3]
+        if 0 <= y < 240 and 0 <= x < 256:
+            sprite_map[y//8, x//8] = 255
     return tile_map.astype(np.uint8), sprite_map.astype(np.uint8)
 
 
