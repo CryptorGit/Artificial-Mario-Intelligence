@@ -2,9 +2,16 @@ syntax = "proto3";
 package inference;
 
 message InferenceRequest {
-  bytes  frame   = 1;
-  bool   is_dead = 2;
-  float  reward  = 3;
+  // Raw RGB game frame (240x224)
+  bytes frame = 1;
+  // 32x30 tile map flattened in row-major order
+  bytes tile_map = 2;
+  // Sprite index map matching the same resolution as the tile map
+  bytes sprite_map = 3;
+  // Terminal flag of the current timestep
+  bool  is_dead = 4;
+  // Reward obtained after executing the previous action
+  float reward = 5;
 }
 
 message InferenceResponse {

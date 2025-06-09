@@ -61,6 +61,26 @@ updated using the REINFORCE algorithm
 The client window will display the game and send frames to the server, which
 responds with actions predicted by the policy.
 
+## Map-based learning example
+
+This repository also provides experimental code for training a segmentation
+model and PPO policy using tile and sprite maps. Required libraries include
+`py65emu`, `gym-retro`, `grpcio`, `grpcio-tools`, `opencv-python`, `numpy` and
+`torch`.
+
+```bash
+pip install py65emu gym-retro grpcio grpcio-tools opencv-python numpy torch
+```
+
+- Start the server:
+  ```bash
+  python server/src/map_server.py
+  ```
+- Run the client:
+  ```bash
+  python client/src/map_client.py
+  ```
+
 ## Utilities
 
 - `server/src/display_server.py` can be run to check the resolution of frames
