@@ -3,19 +3,17 @@
 This project contains a simple reinforcement learning setup for playing
 **Super Mario Bros** using [Gym Retro](https://github.com/openai/retro). Frames
 from the emulator are streamed via gRPC to a PyTorch server that returns the
-next action. The server implements an IndRNN-style CNN policy trained online
-with the REINFORCE algorithm.
+next action. The server uses a lightweight convolutional recurrent policy and is
+trained online with the REINFORCE algorithm.
 
 ## Model details
 
-The policy network is defined in `server/src/model.py`. It combines three
-convolutional layers with [Independently Recurrent Neural Network
-(IndRNN)](https://arxiv.org/abs/1803.04831) connections followed by a fully
-connected layer. Each frame is resized to 256×256 pixels and passed to the
-model together with the previous hidden state. Actions are sampled from a
-Bernoulli distribution to represent the eight controller buttons. Gradients are
-updated using the REINFORCE algorithm
-([Williams, 1992](https://doi.org/10.1007/BF00992696)) whenever an episode ends.
+The policy network is defined in `server/src/model.py`. Frames are processed by
+a small convolutional encoder and the resulting feature vector is integrated
+over time using two recurrent ``IndLinear`` layers. The final layer outputs
+logits for a categorical distribution over a hand written list of valid
+controller combinations. Gradients are updated online with the REINFORCE
+algorithm ([Williams, 1992](https://doi.org/10.1007/BF00992696)).
 
 ## Project structure
 
