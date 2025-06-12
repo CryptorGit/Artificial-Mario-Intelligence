@@ -4,7 +4,9 @@ This project contains a simple reinforcement learning setup for playing
 **Super Mario Bros** using [Gym Retro](https://github.com/openai/retro). Frames
 from the emulator are streamed via gRPC to a PyTorch server that returns the
 next action. The server uses a lightweight convolutional recurrent policy and is
-trained online with the REINFORCE algorithm.
+trained online with the REINFORCE algorithm. The policy is updated every
+``32`` environment steps so memory usage stays constant regardless of episode
+length.
 
 ## Model details
 
