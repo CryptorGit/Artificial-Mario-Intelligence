@@ -26,7 +26,8 @@ from model import Img2ActInd
 # ── ハイパーパラメータ ────────────────────────────────
 LR = 3e-4
 GAMMA = 0.99
-TRUNCATE_STEPS = 32
+TRUNCATE_STEPS = 64
+ENTROPY_BETA = 0.01
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ADDR = os.environ.get("MARIO_SERVER", "0.0.0.0:50051")
 
@@ -99,6 +100,7 @@ step_t = 0
 # ── 3. REINFORCE バッファ ───────────────────────────────
 eps_logps: List[torch.Tensor] = []
 eps_rewards: List[float] = []
+eps_ents:    List[torch.Tensor] = []
 
 
 def _update_buffer() -> tuple[float, float] | None:
@@ -116,7 +118,9 @@ def _update_buffer() -> tuple[float, float] | None:
     mean_ret = returns_t.mean().item()
     returns_t = returns_t - mean_ret
 
-    loss = torch.stack([-logp * R for logp, R in zip(eps_logps, returns_t)]).sum()
+    policy_loss  = torch.stack([-logp * R for logp, R in zip(eps_logps, returns_t)]).sum()
+    entropy_loss = torch.stack(eps_ents).sum()
+    loss = policy_loss - ENTROPY_BETA * entropy_loss
 
     optimizer.zero_grad()
     loss.backward()
@@ -125,6 +129,7 @@ def _update_buffer() -> tuple[float, float] | None:
 
     eps_logps.clear()
     eps_rewards.clear()
+    eps_ents.clear()
     return mean_ret, float(grad)
 
 
@@ -133,7 +138,7 @@ def partial_update() -> None:
     result = _update_buffer()
     if result is not None:
         mean_ret, grad = result
-        print(f"step_return_mean={mean_ret:.3f}, grad_norm={grad:.3f}")
+        #print(f"step_return_mean={mean_ret:.3f}, grad_norm={grad:.3f}")
 
 
 def finish_episode() -> None:
@@ -161,10 +166,16 @@ class Infer(inference_pb2_grpc.InferenceServicer):
 
         dist = torch.distributions.Categorical(logits=logits)
         action_idx = dist.sample()[0]
+        # ─ ε-greedy で 2% ランダム行動 ──────────────────
+        if torch.rand(1).item() < 0.02:
+            action_idx = torch.randint(NUM_ACTIONS, (1,), device=DEVICE)
         logp = dist.log_prob(action_idx)
+        ent = dist.entropy()          # バッチ1なので shape=[1]
 
         eps_logps.append(logp)
         eps_rewards.append(req.reward)
+        eps_ents.append(ent)
+
         if len(eps_logps) >= TRUNCATE_STEPS:
             partial_update()
             new_state = [s.detach() for s in new_state]
