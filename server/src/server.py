@@ -116,7 +116,13 @@ def _update_buffer() -> tuple[float, float] | None:
 
     returns_t = torch.tensor(returns, device=DEVICE)
     mean_ret = returns_t.mean().item()
-    returns_t = returns_t - mean_ret
+    # Baseline removed: returns are used as-is.
+    # To use a moving average baseline, compute ``moving_avg`` and subtract it:
+    #   moving_avg = ...  # running average over past episodes
+    #   returns_t = returns_t - moving_avg
+    # To use a median baseline, compute ``median_ret`` and subtract it:
+    #   median_ret = returns_t.median().item()
+    #   returns_t = returns_t - median_ret
 
     policy_loss  = torch.stack([-logp * R for logp, R in zip(eps_logps, returns_t)]).sum()
     entropy_loss = torch.stack(eps_ents).sum()
