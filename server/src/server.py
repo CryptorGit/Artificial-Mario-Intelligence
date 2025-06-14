@@ -28,6 +28,7 @@ LR = 3e-4
 GAMMA = 0.99
 TRUNCATE_STEPS = 64
 ENTROPY_BETA = 0.01
+BASELINE_DECAY = 0.99  # moving average coefficient
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ADDR = os.environ.get("MARIO_SERVER", "0.0.0.0:50051")
 
@@ -96,6 +97,7 @@ optimizer = torch.optim.Adam(policy.parameters(), lr=LR)
 # single-environment hidden state
 state: List[torch.Tensor] | None = None
 step_t = 0
+baseline = 0.0
 
 # ── 3. REINFORCE バッファ ───────────────────────────────
 eps_logps: List[torch.Tensor] = []
@@ -114,15 +116,12 @@ def _update_buffer() -> tuple[float, float] | None:
         R = r + GAMMA * R
         returns.insert(0, R)
 
+    global baseline
     returns_t = torch.tensor(returns, device=DEVICE)
     mean_ret = returns_t.mean().item()
-    # Baseline removed: returns are used as-is.
-    # To use a moving average baseline, compute ``moving_avg`` and subtract it:
-    #   moving_avg = ...  # running average over past episodes
-    #   returns_t = returns_t - moving_avg
-    # To use a median baseline, compute ``median_ret`` and subtract it:
-    #   median_ret = returns_t.median().item()
-    #   returns_t = returns_t - median_ret
+    # ── moving average baseline ──────────────────────────────
+    returns_t = returns_t - baseline
+    baseline = baseline * BASELINE_DECAY + mean_ret * (1 - BASELINE_DECAY)
 
     policy_loss  = torch.stack([-logp * R for logp, R in zip(eps_logps, returns_t)]).sum()
     entropy_loss = torch.stack(eps_ents).sum()
