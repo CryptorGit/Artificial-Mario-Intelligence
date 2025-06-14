@@ -122,6 +122,9 @@ def _update_buffer() -> tuple[float, float] | None:
     # ── moving average baseline ──────────────────────────────
     returns_t = returns_t - baseline
     baseline = baseline * BASELINE_DECAY + mean_ret * (1 - BASELINE_DECAY)
+    # ── normalize returns for stability ─────────────────────
+    ret_std = returns_t.std() + 1e-8
+    returns_t = returns_t / ret_std
 
     policy_loss  = torch.stack([-logp * R for logp, R in zip(eps_logps, returns_t)]).sum()
     entropy_loss = torch.stack(eps_ents).sum()
