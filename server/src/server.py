@@ -13,6 +13,8 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
+from torch.utils.tensorboard import SummaryWriter
+
 import cv2
 import numpy as np
 import torch
@@ -28,8 +30,10 @@ GAMMA = 0.99
 TRUNCATE_STEPS = 64
 ENTROPY_BETA = 0.01
 BASELINE_DECAY = 0.99  # moving average coefficient
+FREEZE_STEPS = 2000  # steps to freeze log_k
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ADDR = os.environ.get("MARIO_SERVER", "0.0.0.0:50051")
+writer = SummaryWriter("runs/mario")
 
 # --- discrete action list (B,0,SELECT,START,UP,DOWN,LEFT,RIGHT,A) ---
 _ACTIONS_8 = [
@@ -91,7 +95,21 @@ def to_tensor(buf: bytes) -> torch.Tensor:
 
 # ── 2. ポリシーネット & オプティマイザ ───────────────────────
 policy = SinGateAgent(NUM_ACTIONS).to(DEVICE)
-optimizer = torch.optim.Adam(policy.parameters(), lr=LR)
+wm_params = (
+    list(policy.enc.parameters())
+    + list(policy.indrnn.parameters())
+    + list(policy.state_mlp.parameters())
+    + list(policy.decoder.parameters())
+)
+actor_params = list(policy.actor.parameters()) + list(policy.critic.parameters())
+opt_wm = torch.optim.Adam(
+    [
+        {"params": [p for p in wm_params if p is not policy.indrnn.log_k]},
+        {"params": [policy.indrnn.log_k], "lr": 1e-4},
+    ],
+    lr=LR,
+)
+opt_policy = torch.optim.Adam(actor_params, lr=LR)
 
 step_t = 0
 baseline = 0.0
@@ -101,6 +119,8 @@ eps_logps: List[torch.Tensor] = []
 eps_rewards: List[float] = []
 eps_ents:    List[torch.Tensor] = []
 eps_gates:   List[torch.Tensor] = []
+eps_obs:     List[torch.Tensor] = []
+eps_recon:   List[torch.Tensor] = []
 
 
 def _update_buffer() -> tuple[float, float] | None:
@@ -126,21 +146,41 @@ def _update_buffer() -> tuple[float, float] | None:
         ret_std = 1.0
     returns_t = returns_t / ret_std
 
-    policy_loss  = torch.stack([-logp * R for logp, R in zip(eps_logps, returns_t)]).sum()
+    policy_loss = torch.stack([-logp * R for logp, R in zip(eps_logps, returns_t)]).sum()
     entropy_loss = torch.stack(eps_ents).sum()
     gate_mean = torch.stack(eps_gates).mean() if eps_gates else torch.tensor(0.5, device=DEVICE)
-    loss_k, loss_gate = policy.regularization_terms(gate_mean)
-    loss = policy_loss - ENTROPY_BETA * entropy_loss + loss_k + loss_gate
 
-    optimizer.zero_grad()
-    loss.backward()
-    grad = torch.nn.utils.clip_grad_norm_(policy.parameters(), 0.5)
-    optimizer.step()
+    obs_batch = torch.cat(eps_obs)
+    recon_batch = torch.cat(eps_recon)
+    wm_loss = policy.world_model_loss(obs_batch, recon_batch, gate_mean)
+
+    loss = policy_loss - ENTROPY_BETA * entropy_loss
+    total = loss + wm_loss
+
+    opt_policy.zero_grad()
+    opt_wm.zero_grad()
+    if step_t < FREEZE_STEPS:
+        opt_wm.param_groups[1]["lr"] = 0.0
+    else:
+        opt_wm.param_groups[1]["lr"] = 1e-4
+    total.backward()
+    grad_p = torch.nn.utils.clip_grad_norm_(actor_params, 0.5)
+    grad_w = torch.nn.utils.clip_grad_norm_(wm_params, 0.5)
+    opt_policy.step()
+    opt_wm.step()
+
+    writer.add_scalar("loss/policy", loss.item(), step_t)
+    writer.add_scalar("loss/world_model", wm_loss.item(), step_t)
+    writer.add_scalar("gate/mean", gate_mean.item(), step_t)
+    writer.add_scalar("k/value", torch.exp(policy.indrnn.log_k).item(), step_t)
+    grad = float(max(grad_p, grad_w))
 
     eps_logps.clear()
     eps_rewards.clear()
     eps_ents.clear()
     eps_gates.clear()
+    eps_obs.clear()
+    eps_recon.clear()
     return mean_ret, float(grad)
 
 
@@ -158,6 +198,7 @@ def finish_episode() -> None:
     result = _update_buffer()
     if result is not None:
         mean_ret, grad = result
+        writer.add_scalar("return/mean", mean_ret, step_t)
         print(f"step_return_mean={mean_ret:.3f}, grad_norm={grad:.3f}")
     step_t = 0
 
@@ -169,7 +210,7 @@ class Infer(inference_pb2_grpc.InferenceServicer):
 
         x = to_tensor(req.frame).to(DEVICE).unsqueeze(0)
 
-        logits, gate, _ = policy(x, step_t)
+        logits, gate, _, recon = policy(x, step_t)
         step_t += 1
 
         dist = torch.distributions.Categorical(logits=logits)
@@ -184,6 +225,8 @@ class Infer(inference_pb2_grpc.InferenceServicer):
         eps_rewards.append(req.reward)
         eps_ents.append(ent)
         eps_gates.append(gate)
+        eps_obs.append(x)
+        eps_recon.append(recon)
 
         if len(eps_logps) >= TRUNCATE_STEPS:
             partial_update()
@@ -207,6 +250,7 @@ def main():
         pass
     finally:
         cv2.destroyAllWindows()
+        writer.close()
 
 
 if __name__ == "__main__":

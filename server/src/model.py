@@ -16,6 +16,16 @@ import torch.nn.functional as F
 from typing import Optional
 
 
+def symlog(x: torch.Tensor) -> torch.Tensor:
+    """Signed log scaling used for robust value targets."""
+    return torch.sign(x) * torch.log1p(x.abs())
+
+
+def symexp(y: torch.Tensor) -> torch.Tensor:
+    """Inverse of :func:`symlog`."""
+    return torch.sign(y) * torch.expm1(y.abs())
+
+
 # ── Sin-Gate IndRNN world-model variant ───────────────────────────
 class SinGateIndRNNCell(nn.Module):
     """IndRNN cell with a sin gate on the recurrent weight."""
@@ -52,6 +62,28 @@ class SinGateIndRNNCell(nn.Module):
         return h, gate
 
 
+class Decoder(nn.Module):
+    """Simple decoder to reconstruct a 64×64 RGB image from state."""
+
+    def __init__(self, d_state: int, out_ch: int = 3) -> None:
+        super().__init__()
+        self.fc = nn.Linear(d_state, 256 * 6 * 6)
+        self.net = nn.Sequential(
+            nn.ConvTranspose2d(256, 128, 4, 2, 1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(128, 64, 4, 2, 1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(32, out_ch, 3, 1, 1),
+            nn.Upsample(size=(64, 64), mode="bilinear"),
+        )
+
+    def forward(self, s: torch.Tensor) -> torch.Tensor:
+        x = self.fc(s).view(-1, 256, 6, 6)
+        return self.net(x)
+
+
 class SinGateAgent(nn.Module):
     """Lightweight agent using a Sin-Gate IndRNN block."""
 
@@ -66,6 +98,7 @@ class SinGateAgent(nn.Module):
             nn.ReLU(),
             nn.Conv2d(128, d_embed, 4, stride=2, padding=1),
             nn.ReLU(),
+            nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
         )
         self.indrnn = SinGateIndRNNCell(d_embed, d_hidden)
@@ -90,17 +123,25 @@ class SinGateAgent(nn.Module):
             nn.ReLU(),
             nn.Linear(d_state, 1),
         )
+        self.decoder = Decoder(d_state)
         self.register_buffer("gate_ma", torch.tensor(0.5), persistent=False)
 
-    def forward(self, obs: torch.Tensor, step: int, reset_mask: Optional[torch.Tensor] = None):
+    def forward(
+        self, obs: torch.Tensor, step: int, reset_mask: Optional[torch.Tensor] = None
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         x = obs.float() / 255.0
         emb = self.enc(x)
+        if step == 0:
+            B = emb.size(0)
+            self.indrnn.h_prev = self.indrnn.h_prev.new_zeros(B, self.indrnn.h_prev.size(1))
+            self.indrnn.x_prev = emb.detach()
         h, gate = self.indrnn(emb, reset_mask)
         self.gate_ma = 0.99 * self.gate_ma + 0.01 * gate.mean()
         s = self.state_mlp(torch.cat([emb, h], dim=1))
         logits = self.actor(s)
         value = self.critic(s)
-        return logits, gate, value
+        recon = torch.clamp(self.decoder(s), 0.0, 1.0)
+        return logits, gate, value, recon
 
     def regularization_terms(self, gate: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         k = torch.exp(self.indrnn.log_k)
@@ -108,4 +149,11 @@ class SinGateAgent(nn.Module):
         g_mean = gate.mean()
         loss_gate = 1e-2 * ((g_mean - 0.5) ** 2)
         return loss_k, loss_gate
+
+    def world_model_loss(
+        self, obs: torch.Tensor, recon: torch.Tensor, gate: torch.Tensor
+    ) -> torch.Tensor:
+        loss_img = F.mse_loss(recon, obs.float() / 255.0)
+        loss_k, loss_gate = self.regularization_terms(gate)
+        return loss_img + loss_k + loss_gate
 
