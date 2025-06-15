@@ -13,7 +13,7 @@ length.
 The policy network is defined in `server/src/model.py`. Frames are processed
 by a convolutional encoder and passed through a Sin-Gate ``IndRNN`` block that
 modulates the recurrent weight based on the change in input features. The
-resulting state is fed to small actor and critic MLPs, while a simple decoder
+resulting state is fed to a small actor MLP, while a simple decoder
 reconstructs the observation for a world-model loss. Training still uses the
 online REINFORCE algorithm ([Williams, 1992](https://doi.org/10.1007/BF00992696))
 with additional world-model and gating regularization terms. Metrics such as

@@ -6,7 +6,7 @@ This module provides ``SinGateAgent``, a lightweight implementation of the
 Sin-Gate IndRNN world-model. Frames are encoded by a small convolutional
 network and fed into an ``IndRNN`` cell whose recurrent weight is modulated by
 the change in consecutive embeddings. The resulting state is processed by
-actor and critic MLPs.
+a small actor MLP.
 """
 
 import math
@@ -116,19 +116,12 @@ class SinGateAgent(nn.Module):
             nn.ReLU(),
             nn.Linear(d_state, num_actions),
         )
-        self.critic = nn.Sequential(
-            nn.Linear(d_state, d_state),
-            nn.ReLU(),
-            nn.Linear(d_state, d_state),
-            nn.ReLU(),
-            nn.Linear(d_state, 1),
-        )
         self.decoder = Decoder(d_state)
         self.register_buffer("gate_ma", torch.tensor(0.5), persistent=False)
 
     def forward(
         self, obs: torch.Tensor, step: int, reset_mask: Optional[torch.Tensor] = None
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = obs.float() / 255.0
         emb = self.enc(x)
         if step == 0:
@@ -139,9 +132,8 @@ class SinGateAgent(nn.Module):
         self.gate_ma = 0.99 * self.gate_ma + 0.01 * gate.mean()
         s = self.state_mlp(torch.cat([emb, h], dim=1))
         logits = self.actor(s)
-        value = self.critic(s)
         recon = torch.clamp(self.decoder(s), 0.0, 1.0)
-        return logits, gate, value, recon
+        return logits, gate, recon
 
     def regularization_terms(self, gate: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         k = torch.exp(self.indrnn.log_k)

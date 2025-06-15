@@ -101,7 +101,7 @@ wm_params = (
     + list(policy.state_mlp.parameters())
     + list(policy.decoder.parameters())
 )
-actor_params = list(policy.actor.parameters()) + list(policy.critic.parameters())
+actor_params = list(policy.actor.parameters())
 opt_wm = torch.optim.Adam(
     [
         {"params": [p for p in wm_params if p is not policy.indrnn.log_k]},
@@ -210,7 +210,7 @@ class Infer(inference_pb2_grpc.InferenceServicer):
 
         x = to_tensor(req.frame).to(DEVICE).unsqueeze(0)
 
-        logits, gate, _, recon = policy(x, step_t)
+        logits, gate, recon = policy(x, step_t)
         step_t += 1
 
         dist = torch.distributions.Categorical(logits=logits)
