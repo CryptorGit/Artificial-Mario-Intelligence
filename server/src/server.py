@@ -5,12 +5,11 @@
 Frames are streamed from the emulator and the policy is updated online every
 ``TRUNCATE_STEPS`` steps. This keeps the computation graph bounded in size so
 that GPU memory usage stays constant. The network uses a convolutional encoder
-followed by two ``IndLinear`` layers and samples actions from a categorical
-distribution over predefined valid combinations.
+with a Sin-Gate ``IndRNN`` block and samples actions from a categorical
+distribution over predefined button combinations.
 """
 
 import os
-import signal
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
