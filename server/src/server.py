@@ -21,7 +21,7 @@ import grpc
 
 import inference_pb2
 import inference_pb2_grpc
-from model import Img2ActInd
+from model import SinGateAgent
 
 # ── ハイパーパラメータ ────────────────────────────────
 LR = 3e-4
@@ -91,11 +91,9 @@ def to_tensor(buf: bytes) -> torch.Tensor:
 
 
 # ── 2. ポリシーネット & オプティマイザ ───────────────────────
-policy = Img2ActInd(NUM_ACTIONS).to(DEVICE)
+policy = SinGateAgent(NUM_ACTIONS).to(DEVICE)
 optimizer = torch.optim.Adam(policy.parameters(), lr=LR)
 
-# single-environment hidden state
-state: List[torch.Tensor] | None = None
 step_t = 0
 baseline = 0.0
 
@@ -103,6 +101,7 @@ baseline = 0.0
 eps_logps: List[torch.Tensor] = []
 eps_rewards: List[float] = []
 eps_ents:    List[torch.Tensor] = []
+eps_gates:   List[torch.Tensor] = []
 
 
 def _update_buffer() -> tuple[float, float] | None:
@@ -130,7 +129,9 @@ def _update_buffer() -> tuple[float, float] | None:
 
     policy_loss  = torch.stack([-logp * R for logp, R in zip(eps_logps, returns_t)]).sum()
     entropy_loss = torch.stack(eps_ents).sum()
-    loss = policy_loss - ENTROPY_BETA * entropy_loss
+    gate_mean = torch.stack(eps_gates).mean() if eps_gates else torch.tensor(0.5, device=DEVICE)
+    loss_k, loss_gate = policy.regularization_terms(gate_mean)
+    loss = policy_loss - ENTROPY_BETA * entropy_loss + loss_k + loss_gate
 
     optimizer.zero_grad()
     loss.backward()
@@ -140,6 +141,7 @@ def _update_buffer() -> tuple[float, float] | None:
     eps_logps.clear()
     eps_rewards.clear()
     eps_ents.clear()
+    eps_gates.clear()
     return mean_ret, float(grad)
 
 
@@ -152,27 +154,24 @@ def partial_update() -> None:
 
 
 def finish_episode() -> None:
-    """Update remaining steps then reset the hidden state."""
-    global state, step_t
+    """Update remaining steps then reset counters."""
+    global step_t
     result = _update_buffer()
     if result is not None:
         mean_ret, grad = result
         print(f"step_return_mean={mean_ret:.3f}, grad_norm={grad:.3f}")
-    state = None
     step_t = 0
 
 
 # ── 4. gRPC Service ──────────────────────────────────────────
 class Infer(inference_pb2_grpc.InferenceServicer):
     def Predict(self, req, ctx):
-        global state, step_t
+        global step_t
 
         x = to_tensor(req.frame).to(DEVICE).unsqueeze(0)
 
-        logits, new_state = policy(x, state)
+        logits, gate, _ = policy(x, step_t)
         step_t += 1
-        if step_t % TRUNCATE_STEPS == 0:
-            new_state = [s.detach() for s in new_state]
 
         dist = torch.distributions.Categorical(logits=logits)
         action_idx = dist.sample()[0]
@@ -185,12 +184,10 @@ class Infer(inference_pb2_grpc.InferenceServicer):
         eps_logps.append(logp)
         eps_rewards.append(req.reward)
         eps_ents.append(ent)
+        eps_gates.append(gate)
 
         if len(eps_logps) >= TRUNCATE_STEPS:
             partial_update()
-            new_state = [s.detach() for s in new_state]
-
-        state = new_state
         if req.is_dead:
             finish_episode()
 

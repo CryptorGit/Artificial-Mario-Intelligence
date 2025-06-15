@@ -10,12 +10,13 @@ length.
 
 ## Model details
 
-The policy network is defined in `server/src/model.py`. Frames are processed by
-a small convolutional encoder and the resulting feature vector is integrated
-over time using two recurrent ``IndLinear`` layers. The final layer outputs
-logits for a categorical distribution over a hand written list of valid
-controller combinations. Gradients are updated online with the REINFORCE
-algorithm ([Williams, 1992](https://doi.org/10.1007/BF00992696)).
+The policy network is defined in `server/src/model.py`. Frames are processed
+by a convolutional encoder and passed through a Sin-Gate ``IndRNN`` block that
+modulates the recurrent weight based on the change in input features. The
+resulting state is fed to small actor and critic MLPs.
+Training still uses the online REINFORCE algorithm
+([Williams, 1992](https://doi.org/10.1007/BF00992696)) but now includes
+regularization terms for the gating mechanism.
 
 ## Project structure
 
