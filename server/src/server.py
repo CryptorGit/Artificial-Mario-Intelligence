@@ -148,11 +148,11 @@ def _update_buffer() -> tuple[float, float] | None:
 
     policy_loss = torch.stack([-logp * R for logp, R in zip(eps_logps, returns_t)]).sum()
     entropy_loss = torch.stack(eps_ents).sum()
-    gate_mean = torch.stack(eps_gates).mean() if eps_gates else torch.tensor(0.5, device=DEVICE)
+    gate_batch = torch.cat(eps_gates) if eps_gates else torch.full((1, 1), 0.5, device=DEVICE)
 
     obs_batch = torch.cat(eps_obs)
     recon_batch = torch.cat(eps_recon)
-    wm_loss = policy.world_model_loss(obs_batch, recon_batch, gate_mean)
+    wm_loss = policy.world_model_loss(obs_batch, recon_batch, gate_batch)
 
     loss = policy_loss - ENTROPY_BETA * entropy_loss
     total = loss + wm_loss
@@ -160,18 +160,20 @@ def _update_buffer() -> tuple[float, float] | None:
     opt_policy.zero_grad()
     opt_wm.zero_grad()
     if step_t < FREEZE_STEPS:
-        opt_wm.param_groups[1]["lr"] = 0.0
+        policy.indrnn.log_k.requires_grad_(False)
     else:
-        opt_wm.param_groups[1]["lr"] = 1e-4
+        policy.indrnn.log_k.requires_grad_(True)
     total.backward()
-    grad_p = torch.nn.utils.clip_grad_norm_(actor_params, 0.5)
-    grad_w = torch.nn.utils.clip_grad_norm_(wm_params, 0.5)
+    grad_p = torch.nn.utils.clip_grad_norm_(actor_params, 0.3)
+    grad_w = torch.nn.utils.clip_grad_norm_(wm_params, 0.3)
     opt_policy.step()
     opt_wm.step()
 
     writer.add_scalar("loss/policy", loss.item(), step_t)
     writer.add_scalar("loss/world_model", wm_loss.item(), step_t)
-    writer.add_scalar("gate/mean", gate_mean.item(), step_t)
+    writer.add_scalar("loss/img", policy.last_loss_img.item(), step_t)
+    writer.add_scalar("entropy", entropy_loss.item(), step_t)
+    writer.add_scalar("gate/mean", gate_batch.mean().item(), step_t)
     writer.add_scalar("k/value", torch.exp(policy.indrnn.log_k).item(), step_t)
     grad = float(max(grad_p, grad_w))
 

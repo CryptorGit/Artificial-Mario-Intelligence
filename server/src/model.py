@@ -118,6 +118,7 @@ class SinGateAgent(nn.Module):
         )
         self.decoder = Decoder(d_state)
         self.register_buffer("gate_ma", torch.tensor(0.5), persistent=False)
+        self.last_loss_img = torch.tensor(0.0)
 
     def forward(
         self, obs: torch.Tensor, step: int, reset_mask: Optional[torch.Tensor] = None
@@ -145,7 +146,9 @@ class SinGateAgent(nn.Module):
     def world_model_loss(
         self, obs: torch.Tensor, recon: torch.Tensor, gate: torch.Tensor
     ) -> torch.Tensor:
-        loss_img = F.mse_loss(recon, obs.float() / 255.0)
+        obs_ds = F.interpolate(obs, size=(64, 64), mode="bilinear", align_corners=False)
+        loss_img = F.mse_loss(symlog(recon), symlog(obs_ds))
+        self.last_loss_img = loss_img.detach()
         loss_k, loss_gate = self.regularization_terms(gate)
         return loss_img + loss_k + loss_gate
 
