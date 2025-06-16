@@ -168,6 +168,8 @@ def _update_buffer() -> tuple[float, float] | None:
     grad_w = torch.nn.utils.clip_grad_norm_(wm_params, 0.3)
     opt_policy.step()
     opt_wm.step()
+    policy.indrnn.h_prev = policy.indrnn.h_prev.detach()
+    policy.indrnn.x_prev = policy.indrnn.x_prev.detach()
 
     writer.add_scalar("loss/policy", loss.item(), step_t)
     writer.add_scalar("loss/world_model", wm_loss.item(), step_t)
