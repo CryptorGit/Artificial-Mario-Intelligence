@@ -89,8 +89,6 @@ def to_tensor(buf: bytes) -> torch.Tensor:
 
 # ── 2. ポリシーネット & オプティマイザ ───────────────────────
 policy = GaussianGateAgent(NUM_ACTIONS).to(DEVICE)
-actor_params = list(policy.actor.parameters())
-opt_policy = torch.optim.Adam(actor_params, lr=LR)
 
 step_t = 0
 
@@ -112,14 +110,12 @@ class Infer(inference_pb2_grpc.InferenceServicer):
             action_idx = torch.randint(NUM_ACTIONS, (1,), device=DEVICE)
 
         # update weights sequentially using negative FFA
-        opt_policy.zero_grad()
         if step_t < FREEZE_STEPS:
             policy.indrnn.log_sigma.requires_grad_(False)
         else:
             policy.indrnn.log_sigma.requires_grad_(True)
         with torch.no_grad():
             policy.apply_negative_ffa(LR)
-            opt_policy.step()
 
         if DEVICE.type == "cuda":
             torch.cuda.empty_cache()

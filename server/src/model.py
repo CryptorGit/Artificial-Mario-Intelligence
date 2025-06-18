@@ -14,6 +14,15 @@ import torch.nn.functional as F
 from typing import Optional
 
 
+def _energy_project_update(param: torch.Tensor, grad: torch.Tensor, lr: float, eps: float = 1e-12) -> None:
+    """Update parameter by grad while keeping its norm fixed."""
+    dtheta = lr * grad
+    num = -(param * dtheta).sum()
+    den = dtheta.pow(2).sum() + eps
+    alpha = num / den
+    param.data += alpha * dtheta
+
+
 
 # ── Gaussian-Gate IndRNN components ───────────────────────────────
 
@@ -28,6 +37,11 @@ class GaussianGateIndRNNCell(nn.Module):
         self.eps = eps
         self.register_buffer("h_prev", torch.zeros(1, d_hidden), persistent=False)
         self.register_buffer("x_prev", torch.zeros(1, d_embed), persistent=False)
+        self._last_gate: Optional[torch.Tensor] = None
+        self._last_h_prev: Optional[torch.Tensor] = None
+        self._last_h: Optional[torch.Tensor] = None
+        self._last_delta_norm: Optional[torch.Tensor] = None
+        self._last_x: Optional[torch.Tensor] = None
 
     def forward(
         self, x: torch.Tensor, reset_mask: Optional[torch.Tensor] = None
@@ -49,9 +63,27 @@ class GaussianGateIndRNNCell(nn.Module):
         gate = torch.exp(-(dist ** 2) / (2 * sigma * sigma))
         w_eff = gate.unsqueeze(1) * self.w_base
         h = F.relu(self.U(x) + w_eff * self.h_prev)
+        self._last_gate = gate.detach()
+        self._last_h_prev = self.h_prev.detach()
+        self._last_h = h.detach()
+        self._last_delta_norm = delta_norm.detach()
         self.h_prev = h.detach()
         self.x_prev = x.detach()
         return h, gate
+
+    def apply_negative_ffa_w_base(self, lr: float) -> None:
+        if self._last_gate is None:
+            return
+        gate = self._last_gate.unsqueeze(1)
+        grad = gate * self._last_h_prev * self._last_h
+        grad = grad.mean(dim=0)
+        _energy_project_update(self.w_base, grad, lr)
+        sigma = torch.exp(self.log_sigma)
+        grad_sigma = -(
+            self._last_h.pow(2)
+            * (self._last_delta_norm.pow(2).mean(dim=1, keepdim=True) / sigma)
+        ).mean()
+        _energy_project_update(self.log_sigma, grad_sigma, lr)
 
 
 class GaussianGateConvBlock(nn.Module):
@@ -74,6 +106,10 @@ class GaussianGateConvBlock(nn.Module):
         self.eps = eps
         self.register_buffer("h_prev", torch.zeros(1, out_ch, 1, 1), persistent=False)
         self.register_buffer("x_prev", torch.zeros(1, in_ch, 1, 1), persistent=False)
+        self._last_gate: Optional[torch.Tensor] = None
+        self._last_h_prev: Optional[torch.Tensor] = None
+        self._last_h: Optional[torch.Tensor] = None
+        self._last_delta_norm: Optional[torch.Tensor] = None
 
     def forward(self, x: torch.Tensor, reset_mask: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
         B, _, H, W = x.size()
@@ -104,9 +140,27 @@ class GaussianGateConvBlock(nn.Module):
         gate = torch.exp(-(dist ** 2) / (2 * sigma * sigma))
         w_eff = gate.view(B, 1, 1, 1) * self.w_base.view(1, -1, 1, 1)
         h = F.relu(conv_x + w_eff * self.h_prev)
+        self._last_gate = gate.detach()
+        self._last_h_prev = self.h_prev.detach()
+        self._last_h = h.detach()
+        self._last_delta_norm = delta_norm.detach()
+        self._last_x = x.detach()
         self.h_prev = h.detach()
         self.x_prev = x.detach()
         return h, gate
+
+    def apply_negative_ffa_w_base(self, lr: float) -> None:
+        if self._last_gate is None:
+            return
+        gate = self._last_gate.view(-1, 1, 1, 1)
+        grad = gate * self._last_h_prev * self._last_h
+        grad = grad.mean(dim=(0, 2, 3))
+        _energy_project_update(self.w_base, grad, lr)
+        sigma = torch.exp(self.log_sigma)
+        delta_sq = self._last_delta_norm.pow(2).mean(dim=1, keepdim=True)
+        grad_sigma = -(self._last_h.pow(2) * (delta_sq / sigma)).mean()
+        _energy_project_update(self.log_sigma, grad_sigma, lr)
+        reverse_ff_update_conv(self.conv, self._last_x, self._last_h, lr)
 
 
 
@@ -155,12 +209,16 @@ class GaussianGateAgent(nn.Module):
             layer.register_forward_hook(_hook)
 
     def apply_negative_ffa(self, lr: float) -> None:
-        """Update linear layers using only the negative phase."""
+        """Update all layers using only the negative phase."""
         for layer, x_in, h_out in self._ffa_cache:
             zeros_h = torch.zeros_like(h_out)
             zeros_x = torch.zeros_like(x_in)
             reverse_ff_update(layer, zeros_h, zeros_x, h_out, x_in, lr)
         self._ffa_cache.clear()
+
+        self.indrnn.apply_negative_ffa_w_base(lr)
+        for block in self.enc_blocks:
+            block.apply_negative_ffa_w_base(lr)
 
 
     def forward(
@@ -209,4 +267,29 @@ def reverse_ff_update(
 
     layer.weight.data += alpha_w * dW
     layer.bias.data += alpha_b * db
+
+
+def reverse_ff_update_conv(
+    conv: nn.Conv2d,
+    x_in: torch.Tensor,
+    h_out: torch.Tensor,
+    lr: float,
+    eps: float = 1e-12,
+) -> None:
+    B = x_in.size(0)
+    x_unf = F.unfold(
+        x_in,
+        conv.kernel_size,
+        conv.dilation,
+        conv.padding,
+        conv.stride,
+    )
+    h_flat = h_out.reshape(B, conv.out_channels, -1)
+    grad_w = torch.einsum("bcl,bkl->ck", h_flat, x_unf) / B
+    grad_w = grad_w.view_as(conv.weight)
+
+    _energy_project_update(conv.weight, grad_w, lr, eps)
+    if conv.bias is not None:
+        grad_b = h_out.mean(dim=(0, 2, 3))
+        _energy_project_update(conv.bias, grad_b, lr, eps)
 
