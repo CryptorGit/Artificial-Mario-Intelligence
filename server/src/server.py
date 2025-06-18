@@ -113,8 +113,10 @@ class Infer(inference_pb2_grpc.InferenceServicer):
         # update weights sequentially using negative FFA
         if step_t < FREEZE_STEPS:
             policy.indrnn.log_sigma.requires_grad_(False)
+            policy.indrnn.mu.requires_grad_(False)
         else:
             policy.indrnn.log_sigma.requires_grad_(True)
+            policy.indrnn.mu.requires_grad_(True)
         with torch.no_grad():
             policy.apply_negative_ffa(LR)
 

@@ -34,6 +34,8 @@ class GaussianGateIndRNNCell(nn.Module):
         self.U = nn.Linear(d_embed, d_hidden)
         self.w_base = nn.Parameter(torch.randn(d_hidden) * 0.1)
         self.log_sigma = nn.Parameter(torch.log(torch.tensor(sigma)))
+        self.mu = nn.Parameter(torch.zeros(out_ch, 1, 1))
+        self.mu = nn.Parameter(torch.zeros(d_hidden))
         self.eps = eps
         self.register_buffer("h_prev", torch.zeros(1, d_hidden), persistent=False)
         self.register_buffer("x_prev", torch.zeros(1, d_embed), persistent=False)
@@ -60,7 +62,7 @@ class GaussianGateIndRNNCell(nn.Module):
         delta_norm = delta / (self.eps + delta.abs())
         proj = F.linear(delta_norm, self.U.weight, bias=None)
         sigma = torch.exp(self.log_sigma)
-        gate = torch.exp(-(proj ** 2) / (2 * sigma * sigma))
+        gate = torch.exp(-((proj - self.mu) ** 2) / (2 * sigma * sigma))
         w_eff = gate * self.w_base
         h = F.relu(self.U(x) + w_eff * self.h_prev)
         self._last_gate = gate.detach()
@@ -86,6 +88,13 @@ class GaussianGateIndRNNCell(nn.Module):
                 * (self._last_delta_norm.pow(2) / sigma)
             ).mean()
             _energy_project_update(self.log_sigma, grad_sigma, lr)
+        if self.mu.requires_grad:
+            sigma = torch.exp(self.log_sigma)
+            grad_mu = (
+                self._last_h.pow(2)
+                * ((self._last_delta_norm - self.mu) / (sigma * sigma))
+            ).mean(dim=0)
+            _energy_project_update(self.mu, grad_mu, lr)
 
         zeros_h = torch.zeros_like(self._last_h)
         zeros_x = torch.zeros_like(self._last_x)
@@ -152,7 +161,7 @@ class GaussianGateConvBlock(nn.Module):
         delta_norm = delta / (self.eps + delta.abs())
         dist = delta_norm.view(B, self.conv.out_channels, -1).norm(dim=2)
         sigma = torch.exp(self.log_sigma)
-        gate = torch.exp(-(dist ** 2) / (2 * sigma * sigma))
+        gate = torch.exp(-((dist - self.mu.view(1, -1)) ** 2) / (2 * sigma * sigma))
         w_eff = gate.view(B, -1, 1, 1) * self.w_base.view(1, -1, 1, 1)
         h = F.relu(conv_x + w_eff * self.h_prev)
         self._last_gate = gate.detach()
@@ -179,6 +188,15 @@ class GaussianGateConvBlock(nn.Module):
             delta_sq = self._last_delta_norm.pow(2).mean(dim=(2, 3), keepdim=True)
             grad_sigma = -(self._last_h.pow(2) * (delta_sq / sigma)).mean()
             _energy_project_update(self.log_sigma, grad_sigma, lr)
+        if self.mu.requires_grad:
+            sigma = torch.exp(self.log_sigma)
+            dist = self._last_delta_norm.view(self._last_delta_norm.size(0), self.conv.out_channels, -1).norm(dim=2)
+            grad_mu = (
+                self._last_h.pow(2)
+                * ((dist - self.mu.view(1, -1)) / (sigma * sigma))
+            ).mean(dim=0)
+            grad_mu = grad_mu.view_as(self.mu)
+            _energy_project_update(self.mu, grad_mu, lr)
         reverse_ff_update_conv(self.conv, self._last_x, self._last_h, lr)
 
 

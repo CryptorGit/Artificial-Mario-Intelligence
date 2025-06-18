@@ -30,9 +30,9 @@ are element-wise normalised, e.g.
 \[
   \tilde d_{t,i} = \frac{d_{t,i}}{\varepsilon + |d_{t,i}|}.
 \]
-3. **Gaussian Gate.** Each normalised difference produces a gate value
+3. **Gaussian Gate.** Each normalised difference produces a gate value with a learnable centre
 \[
-  g_{t,i} = \exp\bigl(-\tfrac{\tilde d_{t,i}^2}{2\sigma^2}\bigr), \qquad 0 < g_{t,i} \le 1.
+  g_{t,i} = \exp\bigl(-\tfrac{(\tilde d_{t,i} - \mu_i)^2}{2\sigma^2}\bigr), \qquad 0 < g_{t,i} \le 1.
 \]
 4. **IndRNN Update.** For unit \(i\) with recurrent weight \(w_i\) and input weight vector \(U_i\)
 \[
