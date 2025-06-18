@@ -59,7 +59,7 @@ class GaussianGateIndRNNCell(nn.Module):
         gate = torch.exp(-(dist ** 2) / (2 * sigma * sigma))
         w_eff = gate.unsqueeze(1) * self.w_base
         h = F.relu(self.U(x) + w_eff * self.h_prev)
-        self.h_prev = h
+        self.h_prev = h.detach()
         self.x_prev = x.detach()
         return h, gate
 
@@ -114,7 +114,7 @@ class GaussianGateConvBlock(nn.Module):
         gate = torch.exp(-(dist ** 2) / (2 * sigma * sigma))
         w_eff = gate.view(B, 1, 1, 1) * self.w_base.view(1, -1, 1, 1)
         h = F.relu(conv_x + w_eff * self.h_prev)
-        self.h_prev = h
+        self.h_prev = h.detach()
         self.x_prev = x.detach()
         return h, gate
 
