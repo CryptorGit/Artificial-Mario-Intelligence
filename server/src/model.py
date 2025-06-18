@@ -14,11 +14,6 @@ import torch.nn.functional as F
 from typing import Optional
 
 
-def symlog(x: torch.Tensor) -> torch.Tensor:
-    """Signed log scaling used for robust value targets."""
-    return torch.sign(x) * torch.log1p(x.abs())
-
-
 
 # ── Gaussian-Gate IndRNN components ───────────────────────────────
 

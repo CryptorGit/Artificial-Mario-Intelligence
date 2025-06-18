@@ -41,7 +41,6 @@ negative Forward-Forward update without any reward signal.
    python -m grpc_tools.protoc -I client/src --python_out=client/src \
        --grpc_python_out=client/src client/src/inference.proto
        ```
-5. (Optional) Adjust reward weights in `client/src/config.py` to tune training.
 
 ## Running
 
@@ -65,7 +64,6 @@ responds with actions predicted by the policy.
   arriving over gRPC.
 - `client/src/action_test.py` presses each controller button in turn for
   debugging.
-- Reward calculation parameters are located in `client/src/config.py`.
 
 ## Troubleshooting
 

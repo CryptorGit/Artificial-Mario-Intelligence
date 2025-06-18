@@ -2,9 +2,8 @@ syntax = "proto3";
 package inference;
 
 message InferenceRequest {
-  bytes  frame   = 1;
-  bool   is_dead = 2;
-  float  reward  = 3;
+  bytes frame   = 1;
+  bool  is_dead = 2;
 }
 
 message InferenceResponse {
