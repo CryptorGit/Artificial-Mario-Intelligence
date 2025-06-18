@@ -59,7 +59,7 @@ class GaussianGateIndRNNCell(nn.Module):
         gate = torch.exp(-(dist ** 2) / (2 * sigma * sigma))
         w_eff = gate.unsqueeze(1) * self.w_base
         h = F.relu(self.U(x) + w_eff * self.h_prev)
-        self.h_prev = h
+        self.h_prev = h.detach()
         self.x_prev = x.detach()
         return h, gate
 
@@ -87,8 +87,19 @@ class GaussianGateConvBlock(nn.Module):
 
     def forward(self, x: torch.Tensor, reset_mask: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
         B, _, H, W = x.size()
-        if self.h_prev.size(0) != B or self.h_prev.size(2) != H or self.h_prev.size(3) != W:
-            self.h_prev = self.h_prev.new_zeros(B, self.h_prev.size(1), H, W)
+        conv_x = self.conv(x)
+        _, _, Ho, Wo = conv_x.size()
+        if (
+            self.h_prev.size(0) != B
+            or self.h_prev.size(2) != Ho
+            or self.h_prev.size(3) != Wo
+        ):
+            self.h_prev = self.h_prev.new_zeros(B, self.h_prev.size(1), Ho, Wo)
+        if (
+            self.x_prev.size(0) != B
+            or self.x_prev.size(2) != H
+            or self.x_prev.size(3) != W
+        ):            
             self.x_prev = self.x_prev.new_zeros(B, self.x_prev.size(1), H, W)
 
         if reset_mask is not None:
@@ -98,12 +109,12 @@ class GaussianGateConvBlock(nn.Module):
 
         delta = x - self.x_prev
         delta_norm = delta / (self.eps + delta.abs())
-        dist = delta_norm.view(B, -1).norm(dim=1)
+        dist = delta_norm.reshape(B, -1).norm(dim=1)
         sigma = torch.exp(self.log_sigma)
         gate = torch.exp(-(dist ** 2) / (2 * sigma * sigma))
-        w_eff = gate.view(B, 1, 1, 1) * self.w_base
-        h = F.relu(self.conv(x) + w_eff * self.h_prev)
-        self.h_prev = h
+        w_eff = gate.view(B, 1, 1, 1) * self.w_base.view(1, -1, 1, 1)
+        h = F.relu(conv_x + w_eff * self.h_prev)
+        self.h_prev = h.detach()
         self.x_prev = x.detach()
         return h, gate
 
