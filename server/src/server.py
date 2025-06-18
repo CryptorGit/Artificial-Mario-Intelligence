@@ -5,7 +5,7 @@
 Frames are streamed from the emulator and the policy is updated online every
 ``TRUNCATE_STEPS`` steps. This keeps the computation graph bounded in size so
 that GPU memory usage stays constant. The network uses a convolutional encoder
-with a Sin-Gate ``IndRNN`` block and samples actions from a categorical
+with a Gaussian-Gated ``IndRNN`` block and samples actions from a categorical
 distribution over predefined button combinations.
 """
 
@@ -22,7 +22,7 @@ import grpc
 
 import inference_pb2
 import inference_pb2_grpc
-from model import SinGateAgent
+from model import GaussianGateAgent
 
 # ── ハイパーパラメータ ────────────────────────────────
 LR = 3e-4
@@ -30,7 +30,7 @@ GAMMA = 0.99
 TRUNCATE_STEPS = 64
 ENTROPY_BETA = 0.01
 BASELINE_DECAY = 0.99  # moving average coefficient
-FREEZE_STEPS = 2000  # steps to freeze log_k
+FREEZE_STEPS = 2000  # steps to freeze log_sigma
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ADDR = os.environ.get("MARIO_SERVER", "0.0.0.0:50051")
 writer = SummaryWriter("runs/mario")
@@ -94,7 +94,7 @@ def to_tensor(buf: bytes) -> torch.Tensor:
 
 
 # ── 2. ポリシーネット & オプティマイザ ───────────────────────
-policy = SinGateAgent(NUM_ACTIONS).to(DEVICE)
+policy = GaussianGateAgent(NUM_ACTIONS).to(DEVICE)
 wm_params = (
     list(policy.enc.parameters())
     + list(policy.indrnn.parameters())
@@ -104,8 +104,8 @@ wm_params = (
 actor_params = list(policy.actor.parameters())
 opt_wm = torch.optim.Adam(
     [
-        {"params": [p for p in wm_params if p is not policy.indrnn.log_k]},
-        {"params": [policy.indrnn.log_k], "lr": 1e-4},
+        {"params": [p for p in wm_params if p is not policy.indrnn.log_sigma]},
+        {"params": [policy.indrnn.log_sigma], "lr": 1e-4},
     ],
     lr=LR,
 )
@@ -160,9 +160,9 @@ def _update_buffer() -> tuple[float, float] | None:
     opt_policy.zero_grad()
     opt_wm.zero_grad()
     if step_t < FREEZE_STEPS:
-        policy.indrnn.log_k.requires_grad_(False)
+        policy.indrnn.log_sigma.requires_grad_(False)
     else:
-        policy.indrnn.log_k.requires_grad_(True)
+        policy.indrnn.log_sigma.requires_grad_(True)
     total.backward()
     grad_p = torch.nn.utils.clip_grad_norm_(actor_params, 0.3)
     grad_w = torch.nn.utils.clip_grad_norm_(wm_params, 0.3)
@@ -176,7 +176,7 @@ def _update_buffer() -> tuple[float, float] | None:
     writer.add_scalar("loss/img", policy.last_loss_img.item(), step_t)
     writer.add_scalar("entropy", entropy_loss.item(), step_t)
     writer.add_scalar("gate/mean", gate_batch.mean().item(), step_t)
-    writer.add_scalar("k/value", torch.exp(policy.indrnn.log_k).item(), step_t)
+    writer.add_scalar("sigma/value", torch.exp(policy.indrnn.log_sigma).item(), step_t)
     grad = float(max(grad_p, grad_w))
 
     eps_logps.clear()
