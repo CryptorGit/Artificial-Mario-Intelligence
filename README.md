@@ -36,11 +36,19 @@ negative Forward-Forward update without any reward signal.
    ```
 4. (Optional) Regenerate gRPC code if `inference.proto` changes:
    ```bash
-   python -m grpc_tools.protoc -I server/src --python_out=server/src \
-       --grpc_python_out=server/src server/src/inference.proto
-   python -m grpc_tools.protoc -I client/src --python_out=client/src \
-       --grpc_python_out=client/src client/src/inference.proto
-       ```
+   # remove any previously generated stubs
+   rm client/src/inference_pb2*.py server/src/inference_pb2*.py
+
+   # generate stubs from the server copy of inference.proto
+   python -m grpc_tools.protoc \
+       -I server/src \
+       --python_out=server/src \
+       --grpc_python_out=server/src \
+       server/src/inference.proto
+
+   # copy the generated files over to the client
+   cp server/src/inference_pb2*.py client/src/
+   ```
 
 ## Running
 
