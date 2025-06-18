@@ -68,6 +68,10 @@ def decode_frame(buf: bytes) -> np.ndarray:
 
 def to_tensor(buf: bytes) -> torch.Tensor:
     img = decode_frame(buf)  # H×W×3 (RGB)
+    # Debug: Uncomment the following lines to inspect frames received
+    # from the client. Useful for verifying gRPC transmission.
+    # cv2.imshow("received", img)
+    # cv2.waitKey(1)
     h, w = img.shape[:2]
 
     # pad to 256×256
