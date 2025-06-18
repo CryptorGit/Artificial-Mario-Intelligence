@@ -12,10 +12,8 @@ sequential update scheme keeps memory usage small.
 The policy network is defined in `server/src/model.py`. Frames are processed
 by a convolutional encoder and passed through a Sin-Gate ``IndRNN`` block that
 modulates the recurrent weight based on the change in input features. The
-resulting state is fed to a small actor MLP, while a simple decoder
-reconstructs the observation for a world-model loss. Training now relies on a
-negative Forward-Forward update without any reward signal. Metrics such as gate
-mean and ``k`` are logged to TensorBoard.
+resulting state feeds a small actor MLP. Training now relies on a
+negative Forward-Forward update without any reward signal.
 
 ## Project structure
 

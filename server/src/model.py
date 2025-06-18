@@ -114,28 +114,6 @@ class GaussianGateConvBlock(nn.Module):
         return h, gate
 
 
-class Decoder(nn.Module):
-    """Simple decoder to reconstruct a 64×64 RGB image from state."""
-
-    def __init__(self, d_state: int, out_ch: int = 3) -> None:
-        super().__init__()
-        self.fc = nn.Linear(d_state, 256 * 6 * 6)
-        self.net = nn.Sequential(
-            nn.ConvTranspose2d(256, 128, 4, 2, 1),
-            nn.ReLU(),
-            nn.ConvTranspose2d(128, 64, 4, 2, 1),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 32, 4, 2, 1),
-            nn.ReLU(),
-            nn.ConvTranspose2d(32, out_ch, 3, 1, 1),
-            nn.Upsample(size=(64, 64), mode="bilinear"),
-        )
-
-    def forward(self, s: torch.Tensor) -> torch.Tensor:
-        x = self.fc(s).view(-1, 256, 6, 6)
-        return self.net(x)
-
-
 
 class GaussianGateAgent(nn.Module):
     """Agent using Gaussian gated IndRNN and rev-FF updates."""
@@ -165,9 +143,7 @@ class GaussianGateAgent(nn.Module):
             nn.ReLU(),
             nn.Linear(d_state, num_actions),
         )
-        self.decoder = Decoder(d_state)
         self.register_buffer("gate_ma", torch.tensor(0.5), persistent=False)
-        self.last_loss_img = torch.tensor(0.0)
 
         # layers updated by negative Forward-Forward algorithm
         self.ff_layers = [
@@ -191,25 +167,10 @@ class GaussianGateAgent(nn.Module):
             reverse_ff_update(layer, zeros_h, zeros_x, h_out, x_in, lr)
         self._ffa_cache.clear()
 
-    def regularization_terms(self, gate: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        sigma = torch.exp(self.indrnn.log_sigma)
-        loss_sigma = 1e-4 * (sigma ** 2)
-        g_mean = gate.mean()
-        loss_gate = 1e-2 * ((g_mean - 0.5) ** 2)
-        return loss_sigma, loss_gate
-
-    def world_model_loss(
-        self, obs: torch.Tensor, recon: torch.Tensor, gate: torch.Tensor
-    ) -> torch.Tensor:
-        obs_ds = F.interpolate(obs, size=(64, 64), mode="bilinear", align_corners=False)
-        loss_img = F.mse_loss(symlog(recon), symlog(obs_ds))
-        self.last_loss_img = loss_img.detach()
-        loss_s, loss_gate = self.regularization_terms(gate)
-        return loss_img + loss_s + loss_gate
 
     def forward(
         self, obs: torch.Tensor, step: int, reset_mask: Optional[torch.Tensor] = None
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         x = obs.float() / 255.0
         emb = x
         for block in self.enc_blocks:
@@ -223,8 +184,7 @@ class GaussianGateAgent(nn.Module):
         self.gate_ma = 0.99 * self.gate_ma + 0.01 * gate.mean()
         s = self.state_mlp(torch.cat([emb, h], dim=1))
         logits = self.actor(s)
-        recon = torch.clamp(self.decoder(s), 0.0, 1.0)
-        return logits, gate, recon
+        return logits, gate
 
 
 def reverse_ff_update(

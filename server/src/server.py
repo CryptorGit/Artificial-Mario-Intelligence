@@ -98,7 +98,8 @@ class Infer(inference_pb2_grpc.InferenceServicer):
 
         x = to_tensor(req.frame).to(DEVICE).unsqueeze(0)
 
-        logits, gate, _ = policy(x, step_t)
+        with torch.no_grad():
+            logits, gate = policy(x, step_t)
         step_t += 1
 
         dist = torch.distributions.Categorical(logits=logits)
@@ -112,8 +113,9 @@ class Infer(inference_pb2_grpc.InferenceServicer):
             policy.indrnn.log_sigma.requires_grad_(False)
         else:
             policy.indrnn.log_sigma.requires_grad_(True)
-        policy.apply_negative_ffa(LR)
-        opt_policy.step()
+        with torch.no_grad():
+            policy.apply_negative_ffa(LR)
+            opt_policy.step()
 
         if DEVICE.type == "cuda":
             torch.cuda.empty_cache()
