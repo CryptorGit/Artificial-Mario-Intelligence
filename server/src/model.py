@@ -172,6 +172,7 @@ class GaussianGateConvBlock(nn.Module):
         gate = self._last_gate.view(B, C, 1, 1)
         grad = gate * self._last_h_prev * self._last_h
         grad = grad.mean(dim=(0, 2, 3))
+        grad = grad.view_as(self.w_base)
         _energy_project_update(self.w_base, grad, lr)
         if self.log_sigma.requires_grad:
             sigma = torch.exp(self.log_sigma)
