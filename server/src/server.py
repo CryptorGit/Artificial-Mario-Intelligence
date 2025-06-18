@@ -27,6 +27,7 @@ LR = 3e-4
 FREEZE_STEPS = 2000  # steps to freeze log_sigma
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ADDR = os.environ.get("MARIO_SERVER", "0.0.0.0:50051")
+CLEAR_INTERVAL = 500  # how often to clear caches
 writer = SummaryWriter("runs/mario")
 
 # --- discrete action list (B,0,SELECT,START,UP,DOWN,LEFT,RIGHT,A) ---
@@ -118,6 +119,13 @@ class Infer(inference_pb2_grpc.InferenceServicer):
             policy.indrnn.log_sigma.requires_grad_(True)
         policy.apply_negative_ffa(LR)
         opt_policy.step()
+
+        if step_t % CLEAR_INTERVAL == 0:
+            if DEVICE.type == "cuda":
+                torch.cuda.empty_cache()
+            writer.flush()
+            import gc
+            gc.collect()
 
 
         writer.add_scalar("gate/mean", gate.mean().item(), step_t)
