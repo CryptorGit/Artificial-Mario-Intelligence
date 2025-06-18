@@ -10,8 +10,8 @@ algorithm. No reward signal is used for learning.
 import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
+import gc
 
-from torch.utils.tensorboard import SummaryWriter
 
 import cv2
 import numpy as np
@@ -27,8 +27,6 @@ LR = 3e-4
 FREEZE_STEPS = 2000  # steps to freeze log_sigma
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ADDR = os.environ.get("MARIO_SERVER", "0.0.0.0:50051")
-CLEAR_INTERVAL = 500  # how often to clear caches
-writer = SummaryWriter("runs/mario")
 
 # --- discrete action list (B,0,SELECT,START,UP,DOWN,LEFT,RIGHT,A) ---
 _ACTIONS_8 = [
@@ -80,9 +78,6 @@ def to_tensor(buf: bytes) -> torch.Tensor:
             img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0
         )
 
-    # これは確認用
-    # cv2.imshow("preview (RGB)", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-    # cv2.waitKey(1)
 
     t = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0  # 0-1
     return t  # [3,256,256]
@@ -120,15 +115,10 @@ class Infer(inference_pb2_grpc.InferenceServicer):
         policy.apply_negative_ffa(LR)
         opt_policy.step()
 
-        if step_t % CLEAR_INTERVAL == 0:
-            if DEVICE.type == "cuda":
-                torch.cuda.empty_cache()
-            writer.flush()
-            import gc
-            gc.collect()
+        if DEVICE.type == "cuda":
+            torch.cuda.empty_cache()
+        gc.collect()
 
-
-        writer.add_scalar("gate/mean", gate.mean().item(), step_t)
         if req.is_dead:
             step_t = 0
 
@@ -142,14 +132,12 @@ def main():
     inference_pb2_grpc.add_InferenceServicer_to_server(Infer(), server)
     server.add_insecure_port(ADDR)
     server.start()
-    print(f"Mario server running on {ADDR} (Ctrl-C to quit)")
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
         pass
     finally:
         cv2.destroyAllWindows()
-        writer.close()
 
 
 if __name__ == "__main__":

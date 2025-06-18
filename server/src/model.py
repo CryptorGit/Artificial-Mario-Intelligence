@@ -8,7 +8,6 @@ Gaussian‑gated self loops so that temporal differences directly modulate the
 convolutional features.
 """
 
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,10 +18,6 @@ def symlog(x: torch.Tensor) -> torch.Tensor:
     """Signed log scaling used for robust value targets."""
     return torch.sign(x) * torch.log1p(x.abs())
 
-
-def symexp(y: torch.Tensor) -> torch.Tensor:
-    """Inverse of :func:`symlog`."""
-    return torch.sign(y) * torch.expm1(y.abs())
 
 
 # ── Gaussian-Gate IndRNN components ───────────────────────────────
