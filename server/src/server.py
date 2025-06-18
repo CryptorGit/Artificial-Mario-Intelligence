@@ -100,8 +100,9 @@ class Infer(inference_pb2_grpc.InferenceServicer):
 
         x = to_tensor(req.frame).to(DEVICE).unsqueeze(0)
 
+        reset = 0.0 if req.is_dead else 1.0
         with torch.no_grad():
-            logits, gate = policy(x, step_t)
+            logits, gate = policy(x, step_t, reset_mask=torch.tensor([reset], device=DEVICE))
         step_t += 1
 
         dist = torch.distributions.Categorical(logits=logits)
