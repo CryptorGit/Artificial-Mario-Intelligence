@@ -98,7 +98,7 @@ class GaussianGateConvBlock(nn.Module):
 
         delta = x - self.x_prev
         delta_norm = delta / (self.eps + delta.abs())
-        dist = delta_norm.view(B, -1).norm(dim=1)
+        dist = delta_norm.reshape(B, -1).norm(dim=1)
         sigma = torch.exp(self.log_sigma)
         gate = torch.exp(-(dist ** 2) / (2 * sigma * sigma))
         w_eff = gate.view(B, 1, 1, 1) * self.w_base
