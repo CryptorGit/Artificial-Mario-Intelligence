@@ -168,7 +168,8 @@ class GaussianGateConvBlock(nn.Module):
     def apply_negative_ffa_w_base(self, lr: float) -> None:
         if self._last_gate is None:
             return
-        gate = self._last_gate.view(-1, 1, 1, 1)
+        B, C = self._last_gate.shape
+        gate = self._last_gate.view(B, C, 1, 1)
         grad = gate * self._last_h_prev * self._last_h
         grad = grad.mean(dim=(0, 2, 3))
         _energy_project_update(self.w_base, grad, lr)
