@@ -4,9 +4,8 @@ This project contains a simple reinforcement learning setup for playing
 **Super Mario Bros** using [Gym Retro](https://github.com/openai/retro). Frames
 from the emulator are streamed via gRPC to a PyTorch server that returns the
 next action. The server uses a lightweight convolutional recurrent policy and is
-trained online with the REINFORCE algorithm. The policy is updated every
-``32`` environment steps so memory usage stays constant regardless of episode
-length.
+trained online using a negative Forward-Forward update on each step. This
+sequential update scheme keeps memory usage small.
 
 ## Model details
 
@@ -14,10 +13,9 @@ The policy network is defined in `server/src/model.py`. Frames are processed
 by a convolutional encoder and passed through a Sin-Gate ``IndRNN`` block that
 modulates the recurrent weight based on the change in input features. The
 resulting state is fed to a small actor MLP, while a simple decoder
-reconstructs the observation for a world-model loss. Training still uses the
-online REINFORCE algorithm ([Williams, 1992](https://doi.org/10.1007/BF00992696))
-with additional world-model and gating regularization terms. Metrics such as
-gate mean and ``k`` are logged to TensorBoard.
+reconstructs the observation for a world-model loss. Training now relies on a
+negative Forward-Forward update without any reward signal. Metrics such as gate
+mean and ``k`` are logged to TensorBoard.
 
 ## Project structure
 

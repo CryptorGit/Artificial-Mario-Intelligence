@@ -174,6 +174,28 @@ class GaussianGateAgent(nn.Module):
         self.register_buffer("gate_ma", torch.tensor(0.5), persistent=False)
         self.last_loss_img = torch.tensor(0.0)
 
+        # layers updated by negative Forward-Forward algorithm
+        self.ff_layers = [
+            m
+            for m in list(self.state_mlp) + list(self.actor)
+            if isinstance(m, nn.Linear)
+        ]
+        self._ffa_cache: list[tuple[nn.Linear, torch.Tensor, torch.Tensor]] = []
+
+        def _hook(module, inp, out):
+            self._ffa_cache.append((module, inp[0].detach(), out.detach()))
+
+        for layer in self.ff_layers:
+            layer.register_forward_hook(_hook)
+
+    def apply_negative_ffa(self, lr: float) -> None:
+        """Update linear layers using only the negative phase."""
+        for layer, x_in, h_out in self._ffa_cache:
+            zeros_h = torch.zeros_like(h_out)
+            zeros_x = torch.zeros_like(x_in)
+            reverse_ff_update(layer, zeros_h, zeros_x, h_out, x_in, lr)
+        self._ffa_cache.clear()
+
     def regularization_terms(self, gate: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         sigma = torch.exp(self.indrnn.log_sigma)
         loss_sigma = 1e-4 * (sigma ** 2)
