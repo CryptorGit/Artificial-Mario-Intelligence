@@ -46,8 +46,12 @@ negative Forward-Forward update without any reward signal.
        --grpc_python_out=server/src \
        server/src/inference.proto
 
-   # copy the generated files over to the client
-   cp server/src/inference_pb2*.py client/src/
+   # generate stubs from the client copy of inference.proto
+   python -m grpc_tools.protoc ^
+       -I client\src ^
+       --python_out=client\src ^
+       --grpc_python_out=client\src ^
+       client\src\inference.proto
    ```
 
 ## Running
