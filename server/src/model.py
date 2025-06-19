@@ -39,7 +39,7 @@ class RandomProjectionEncoder(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B = x.size(0)
-        return self.proj(x.view(B, -1))
+        return self.proj(x.reshape(B, -1))
 
 
 
