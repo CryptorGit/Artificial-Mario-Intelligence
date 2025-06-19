@@ -132,7 +132,9 @@ def main():
     server = grpc.server(ThreadPoolExecutor(max_workers=4))
     inference_pb2_grpc.add_InferenceServicer_to_server(Infer(), server)
     server.add_insecure_port(ADDR)
+    port = server.add_insecure_port(ADDR)
     server.start()
+    print(f"Inference server ready, listening on {ADDR} (bound port: {port})")
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
