@@ -4,6 +4,7 @@ import retro
 import grpc
 import cv2
 import numpy as np
+import os
 import inference_pb2
 import inference_pb2_grpc
 
@@ -17,8 +18,9 @@ def main():
     obs = env.reset()
 
     action = [0]*8
-    channel = grpc.insecure_channel('100.64.1.26:50051')
-    stub    = inference_pb2_grpc.InferenceStub(channel)
+    addr = os.environ.get("MARIO_SERVER", "100.64.1.26:50051")
+    channel = grpc.insecure_channel(addr)
+    stub = inference_pb2_grpc.InferenceStub(channel)
 
     cv2.namedWindow('Game', cv2.WINDOW_AUTOSIZE)
     while True:
