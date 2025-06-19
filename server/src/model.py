@@ -139,18 +139,27 @@ class GaussianGateAgent(nn.Module):
             self.rnn_layers.append(GaussianGateIndRNNCell(in_dim, out_dim))
             in_dim = out_dim
 
-        # final linear actor (frozen)
+        # final linear actor (trainable)
         self.actor = nn.Linear(in_dim, num_actions, bias=True)
 
         for p in self.encoder.parameters():
             p.requires_grad_(False)
-        for p in self.actor.parameters():
-            p.requires_grad_(False)
+
+        # buffers for actor updates
+        self._actor_in: Optional[torch.Tensor] = None
+        self._actor_out: Optional[torch.Tensor] = None
 
     def apply_negative_ffa(self, lr: float) -> None:
         """Apply negative Forward-Forward update to all IndRNN layers."""
         for layer in self.rnn_layers:
             layer.apply_negative_ffa_w_base(lr)
+
+        if self._actor_in is not None and self._actor_out is not None:
+            zeros_h = torch.zeros_like(self._actor_out)
+            zeros_x = torch.zeros_like(self._actor_in)
+            reverse_ff_update(
+                self.actor, zeros_h, zeros_x, self._actor_out, self._actor_in, lr
+            )
 
 
     def forward(
@@ -160,6 +169,8 @@ class GaussianGateAgent(nn.Module):
         for layer in self.rnn_layers:
             x, _ = layer(x, reset_mask)
         logits = self.actor(x)
+        self._actor_in = x.detach()
+        self._actor_out = logits.detach()
         return logits
 
 
