@@ -24,7 +24,6 @@ from model import GaussianGateAgent
 
 # ── ハイパーパラメータ ────────────────────────────────
 LR = 3e-4
-FREEZE_STEPS = 2000  # steps to freeze log_sigma
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ADDR = os.environ.get("MARIO_SERVER", "0.0.0.0:50051")
 
@@ -112,12 +111,8 @@ class Infer(inference_pb2_grpc.InferenceServicer):
 
         # update weights sequentially using negative FFA
         for layer in policy.rnn_layers:
-            if step_t < FREEZE_STEPS:
-                layer.log_sigma.requires_grad_(False)
-                layer.mu.requires_grad_(False)
-            else:
-                layer.log_sigma.requires_grad_(True)
-                layer.mu.requires_grad_(True)
+            layer.log_sigma.requires_grad_(True)
+            layer.mu.requires_grad_(True)
         with torch.no_grad():
             policy.apply_negative_ffa(LR)
 
