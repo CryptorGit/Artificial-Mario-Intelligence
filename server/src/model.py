@@ -23,6 +23,21 @@ def _energy_project_update(param: torch.Tensor, grad: torch.Tensor, lr: float, e
     param.data += alpha * dtheta
 
 
+# --- NEW: simple random-projection encoder ------------------------
+class RandomProjectionEncoder(nn.Module):
+    def __init__(self, in_dim: int, out_dim: int, fix: bool = True) -> None:
+        super().__init__()
+        self.proj = nn.Linear(in_dim, out_dim, bias=False)
+        nn.init.normal_(self.proj.weight, mean=0.0, std=1.0 / out_dim ** 0.5)
+        if fix:
+            for p in self.proj.parameters():
+                p.requires_grad_(False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B = x.size(0)
+        return self.proj(x.view(B, -1))
+
+
 
 # ── Gaussian-Gate IndRNN components ───────────────────────────────
 
@@ -206,14 +221,8 @@ class GaussianGateAgent(nn.Module):
 
     def __init__(self, num_actions: int, d_embed: int = 256, d_hidden: int = 512, d_state: int = 256):
         super().__init__()
-        self.enc_blocks = nn.ModuleList([
-            GaussianGateConvBlock(3, 32, 4, stride=2, padding=1),
-            GaussianGateConvBlock(32, 64, 4, stride=2, padding=1),
-            GaussianGateConvBlock(64, 128, 4, stride=2, padding=1),
-            GaussianGateConvBlock(128, d_embed, 4, stride=2, padding=1),
-        ])
-        self.pool = nn.AdaptiveAvgPool2d(1)
-        self.flatten = nn.Flatten()
+        IMG_FLAT = 3 * 256 * 256
+        self.encoder = RandomProjectionEncoder(IMG_FLAT, d_embed, fix=True)
         self.indrnn = GaussianGateIndRNNCell(d_embed, d_hidden)
         self.state_mlp = nn.Sequential(
             nn.Linear(d_embed + d_hidden, d_state),
@@ -254,18 +263,12 @@ class GaussianGateAgent(nn.Module):
         self._ffa_cache.clear()
 
         self.indrnn.apply_negative_ffa_w_base(lr)
-        for block in self.enc_blocks:
-            block.apply_negative_ffa_w_base(lr)
 
 
     def forward(
         self, obs: torch.Tensor, step: int, reset_mask: Optional[torch.Tensor] = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        x = obs.float() / 255.0
-        emb = x
-        for block in self.enc_blocks:
-            emb, _ = block(emb, reset_mask)
-        emb = self.flatten(self.pool(emb))
+        emb = self.encoder(obs.float())
         if step == 0:
             B = emb.size(0)
             self.indrnn.h_prev = self.indrnn.h_prev.new_zeros(B, self.indrnn.h_prev.size(1))
