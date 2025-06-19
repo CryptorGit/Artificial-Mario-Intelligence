@@ -34,6 +34,7 @@ are element-wise normalised, e.g.
 \[
   g_{t,i} = \exp\bigl(-\tfrac{(\tilde d_{t,i} - \mu_i)^2}{2\sigma^2}\bigr), \qquad 0 < g_{t,i} \le 1.
 \]
+Both $\mu_i$ and $\sigma$ are updated from the very first step without any freezing schedule.
 4. **IndRNN Update.** For unit \(i\) with recurrent weight \(w_i\) and input weight vector \(U_i\)
 \[
   h_{t,i} = \phi\bigl( w_i\,g_{t,i}\,h_{t-1,i} \;{+}\; U_i^\top x_t + b_i \bigr),

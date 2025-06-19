@@ -16,9 +16,12 @@ gate value for unit *i* is
 where \(\tilde d_{t,i}\) is the normalised frame difference. The hidden state
 is updated as
 \[h_{t,i}=\mathrm{ReLU}\bigl(w_i g_{t,i} h_{t-1,i} + U_i^\top x_t\bigr).\]
+Both gate parameters $\mu_i$ and $\sigma_i$ are trained from the start with no
+initial freezing period.
 Action logits come from an MLP. Online training uses the negative
 Forward‑Forward rule with energy projection, updating weights by
 \(\Delta W \propto h^{-}x^{-}\) while keeping their Frobenius norm constant.
+The final actor layer is trained with the same local rule.
 
 ## Project structure
 
