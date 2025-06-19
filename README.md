@@ -9,18 +9,22 @@ sequential update scheme keeps memory usage small.
 
 ## Model details
 
-The policy network is defined in `server/src/model.py`. Frames are processed
-by a convolutional encoder and passed through a Sin-Gate ``IndRNN`` block that
-modulates the recurrent weight based on the change in input features. The
-resulting state feeds a small actor MLP. Training now relies on a
-negative Forward-Forward update without any reward signal.
+The policy network is defined in `server/src/model.py`. Frames are flattened by
+a small random projection and fed into a Gaussian‑gated ``IndRNN`` cell. The
+gate value for unit *i* is
+\[g_{t,i} = \exp\bigl(-((\tilde d_{t,i}-\mu_i)^2)/(2\sigma_i^2)\bigr),\]
+where \(\tilde d_{t,i}\) is the normalised frame difference. The hidden state
+is updated as
+\[h_{t,i}=\mathrm{ReLU}\bigl(w_i g_{t,i} h_{t-1,i} + U_i^\top x_t\bigr).\]
+Action logits come from an MLP. Online training uses the negative
+Forward‑Forward rule with energy projection, updating weights by
+\(\Delta W \propto h^{-}x^{-}\) while keeping their Frobenius norm constant.
 
 ## Project structure
 
 - `client/src` – client that runs the emulator and communicates with the server.
 - `server/src` – gRPC server and neural network policy.
 - `client/roms` – example ROM files (must be imported with `retro.import`).
-- `server/src/display_server.py` – utility to inspect frames received over gRPC.
 - `client/src/action_test.py` – cycles through all buttons for input testing.
 
 ## Setup
@@ -72,8 +76,6 @@ responds with actions predicted by the policy.
 
 ## Utilities
 
-- `server/src/display_server.py` can be run to check the resolution of frames
-  arriving over gRPC.
 - `client/src/action_test.py` presses each controller button in turn for
   debugging.
 

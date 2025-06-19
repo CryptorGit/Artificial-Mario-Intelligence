@@ -70,6 +70,9 @@ yields the weight update
 \[
   \Delta w_{ij}=\eta\bigl(h_{l,i}^{+} x_{l,j}^{+} - h_{l,i}^{-} x_{l,j}^{-}\bigr).
 \]
+In this implementation we omit the positive pass by setting
+\(h^+\) and \(x^+\) to zeros, yielding a purely "negative" update
+\(\Delta w_{ij}=-\eta h_{l,i}^{-} x_{l,j}^{-}\).
 
 ### 3.3 Energy-Conserving Scaling
 To approximately preserve \(\|W\|_F^2\) per layer, scale \(\Delta W\) by
