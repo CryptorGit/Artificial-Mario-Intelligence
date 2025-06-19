@@ -34,7 +34,6 @@ class GaussianGateIndRNNCell(nn.Module):
         self.U = nn.Linear(d_embed, d_hidden)
         self.w_base = nn.Parameter(torch.randn(d_hidden) * 0.1)
         self.log_sigma = nn.Parameter(torch.log(torch.tensor(sigma)))
-        self.mu = nn.Parameter(torch.zeros(out_ch, 1, 1))
         self.mu = nn.Parameter(torch.zeros(d_hidden))
         self.eps = eps
         self.register_buffer("h_prev", torch.zeros(1, d_hidden), persistent=False)
@@ -118,6 +117,7 @@ class GaussianGateConvBlock(nn.Module):
         self.conv = nn.Conv2d(in_ch, out_ch, kernel_size, stride, padding)
         self.w_base = nn.Parameter(torch.randn(out_ch, 1, 1, 1) * 0.1)
         self.log_sigma = nn.Parameter(torch.log(torch.tensor(sigma)))
+        self.mu = nn.Parameter(torch.zeros(out_ch, 1, 1))
         self.eps = eps
         self.register_buffer("h_prev", torch.zeros(1, out_ch, 1, 1), persistent=False)
         self.register_buffer("x_prev", torch.zeros(1, in_ch, 1, 1), persistent=False)
