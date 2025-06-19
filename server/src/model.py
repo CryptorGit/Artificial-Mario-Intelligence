@@ -14,6 +14,10 @@ import torch.nn.functional as F
 from typing import Optional
 
 
+D_RP = 4096  # output dimension of random projection
+D_HIDD = [2048, 1024, 512]  # hidden sizes for stacked IndRNN layers
+
+
 def _energy_project_update(param: torch.Tensor, grad: torch.Tensor, lr: float, eps: float = 1e-12) -> None:
     """Update parameter by grad while keeping its norm fixed."""
     dtheta = lr * grad
@@ -119,67 +123,44 @@ class GaussianGateIndRNNCell(nn.Module):
 
 
 class GaussianGateAgent(nn.Module):
-    """Agent using Gaussian gated IndRNN and rev-FF updates."""
+    """Agent with random projection encoder and stacked Gaussian-gated IndRNNs."""
 
-    def __init__(self, num_actions: int, d_embed: int = 256, d_hidden: int = 512, d_state: int = 256):
+    def __init__(self, num_actions: int) -> None:
         super().__init__()
         IMG_FLAT = 3 * 256 * 256
-        self.encoder = RandomProjectionEncoder(IMG_FLAT, d_embed, fix=True)
-        self.indrnn = GaussianGateIndRNNCell(d_embed, d_hidden)
-        self.state_mlp = nn.Sequential(
-            nn.Linear(d_embed + d_hidden, d_state),
-            nn.ReLU(),
-            nn.Linear(d_state, d_state),
-            nn.LayerNorm(d_state),
-            nn.ReLU(),
-        )
-        self.actor = nn.Sequential(
-            nn.Linear(d_state, d_state),
-            nn.ReLU(),
-            nn.Linear(d_state, d_state),
-            nn.ReLU(),
-            nn.Linear(d_state, num_actions),
-        )
-        self.register_buffer("gate_ma", torch.tensor(0.5), persistent=False)
 
-        # layers updated by negative Forward-Forward algorithm
-        self.ff_layers = [
-            m
-            for m in list(self.state_mlp) + list(self.actor)
-            if isinstance(m, nn.Linear)
-        ]
-        self._ffa_cache: list[tuple[nn.Linear, torch.Tensor, torch.Tensor]] = []
+        # random projection (frozen)
+        self.encoder = RandomProjectionEncoder(IMG_FLAT, D_RP, fix=True)
 
-        def _hook(module, inp, out):
-            self._ffa_cache.append((module, inp[0].detach(), out.detach()))
+        # stack of IndRNN layers with self loops
+        self.rnn_layers = nn.ModuleList()
+        in_dim = D_RP
+        for out_dim in D_HIDD:
+            self.rnn_layers.append(GaussianGateIndRNNCell(in_dim, out_dim))
+            in_dim = out_dim
 
-        for layer in self.ff_layers:
-            layer.register_forward_hook(_hook)
+        # final linear actor (frozen)
+        self.actor = nn.Linear(in_dim, num_actions, bias=True)
+
+        for p in self.encoder.parameters():
+            p.requires_grad_(False)
+        for p in self.actor.parameters():
+            p.requires_grad_(False)
 
     def apply_negative_ffa(self, lr: float) -> None:
-        """Update all layers using only the negative phase."""
-        for layer, x_in, h_out in self._ffa_cache:
-            zeros_h = torch.zeros_like(h_out)
-            zeros_x = torch.zeros_like(x_in)
-            reverse_ff_update(layer, zeros_h, zeros_x, h_out, x_in, lr)
-        self._ffa_cache.clear()
-
-        self.indrnn.apply_negative_ffa_w_base(lr)
+        """Apply negative Forward-Forward update to all IndRNN layers."""
+        for layer in self.rnn_layers:
+            layer.apply_negative_ffa_w_base(lr)
 
 
     def forward(
-        self, obs: torch.Tensor, step: int, reset_mask: Optional[torch.Tensor] = None
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        emb = self.encoder(obs.float())
-        if step == 0:
-            B = emb.size(0)
-            self.indrnn.h_prev = self.indrnn.h_prev.new_zeros(B, self.indrnn.h_prev.size(1))
-            self.indrnn.x_prev = emb.detach()
-        h, gate = self.indrnn(emb, reset_mask)
-        self.gate_ma = 0.99 * self.gate_ma + 0.01 * gate.mean()
-        s = self.state_mlp(torch.cat([emb, h], dim=1))
-        logits = self.actor(s)
-        return logits, gate
+        self, obs: torch.Tensor, reset_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        x = self.encoder(obs.float())
+        for layer in self.rnn_layers:
+            x, _ = layer(x, reset_mask)
+        logits = self.actor(x)
+        return logits
 
 
 def reverse_ff_update(

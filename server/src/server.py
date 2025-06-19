@@ -102,7 +102,7 @@ class Infer(inference_pb2_grpc.InferenceServicer):
 
         reset = 0.0 if req.is_dead else 1.0
         with torch.no_grad():
-            logits, gate = policy(x, step_t, reset_mask=torch.tensor([reset], device=DEVICE))
+            logits = policy(x, reset_mask=torch.tensor([reset], device=DEVICE))
         step_t += 1
 
         dist = torch.distributions.Categorical(logits=logits)
@@ -111,12 +111,13 @@ class Infer(inference_pb2_grpc.InferenceServicer):
             action_idx = torch.randint(NUM_ACTIONS, (1,), device=DEVICE)
 
         # update weights sequentially using negative FFA
-        if step_t < FREEZE_STEPS:
-            policy.indrnn.log_sigma.requires_grad_(False)
-            policy.indrnn.mu.requires_grad_(False)
-        else:
-            policy.indrnn.log_sigma.requires_grad_(True)
-            policy.indrnn.mu.requires_grad_(True)
+        for layer in policy.rnn_layers:
+            if step_t < FREEZE_STEPS:
+                layer.log_sigma.requires_grad_(False)
+                layer.mu.requires_grad_(False)
+            else:
+                layer.log_sigma.requires_grad_(True)
+                layer.mu.requires_grad_(True)
         with torch.no_grad():
             policy.apply_negative_ffa(LR)
 
