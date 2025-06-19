@@ -68,8 +68,8 @@ The final actor layer is trained with the same local rule.
    ```bash
    python server/src/server.py
    ```
-2. Optionally set `MARIO_SERVER` to the server address (default
-   `100.64.1.26:50051`) and start the client:
+2. Set `MARIO_SERVER` to the server address (default
+   `127.0.0.1:50051` when running locally) and start the client:
    ```bash
    MARIO_SERVER=127.0.0.1:50051 python client/src/client.py
    ```
