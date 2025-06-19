@@ -68,10 +68,10 @@ The final actor layer is trained with the same local rule.
    ```bash
    python server/src/server.py
    ```
-2. Edit `client/src/client.py` to specify the server address in
-   `grpc.insecure_channel` (default `100.64.1.26:50051`) and start the client:
+2. Optionally set `MARIO_SERVER` to the server address (default
+   `100.64.1.26:50051`) and start the client:
    ```bash
-   python client/src/client.py
+   MARIO_SERVER=127.0.0.1:50051 python client/src/client.py
    ```
 
 The client window will display the game and send frames to the server, which
