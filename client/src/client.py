@@ -18,7 +18,7 @@ def main():
     obs = env.reset()
 
     action = [0]*8
-    addr = os.environ.get("MARIO_SERVER", "127.0.0.1:50051")
+    addr = os.environ.get("MARIO_SERVER", "100.64.1.26:50051")
     channel = grpc.insecure_channel(addr)
     stub = inference_pb2_grpc.InferenceStub(channel)
 
